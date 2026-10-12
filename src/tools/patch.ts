@@ -76,7 +76,7 @@ function applyHunks(original: string, hunks: Hunk[]): { result: string; changedL
         }
         if (!contextMatched) {
             throw new Error(
-                `Hunk satırları eşleşmiyor (${hunk.oldStart}. satır civarı). Dosya içeriği güncelliğini yitirmiş olabilir.`
+                `Hunk lines do not match (around line ${hunk.oldStart}). The file content may have changed.`
             );
         }
         for (const line of hunk.lines) {
@@ -103,34 +103,34 @@ function applyHunks(original: string, hunks: Hunk[]): { result: string; changedL
 export const applyPatchTool: AgentTool = {
     name: "apply_patch",
     description:
-        "Unified diff formatında bir yamayı dosyaya uygular. Eksiksiz dosya değişiklikleri için write_file'ı tercih edin. " +
-        "Yama formatı: --- a/yol + +++ b/yol + @@ -eskiSatır,sayı +yeniSatır,sayı @@ + satırlar. " +
-        "Küçük ve hedefli değişikliklerde daha güvenilirdir.",
+        "Applies a unified diff patch to a file. Prefer write_file for complete file rewrites. " +
+        "Patch format: --- a/path + +++ b/path + @@ -oldStart,oldCount +newStart,newCount @@ + lines. " +
+        "More reliable for small, targeted changes.",
     parameters: {
         type: "object",
         properties: {
-            patch: { type: "string", description: "Uygulanacak unified diff içeriği" },
-            cwd: { type: "string", description: "Göreli yolların çözüleceği dizin" }
+            patch: { type: "string", description: "Unified diff content to apply" },
+            cwd: { type: "string", description: "Directory where relative paths are resolved" }
         },
         required: ["patch"]
     },
     handler: async (params: { patch: string; cwd?: string }, ctx) => {
         const parsed = parseUnifiedDiff(params.patch);
         if (!parsed) {
-            return { ok: false, output: "Geçerli bir unified diff bulunamadı. --- a/yol ve @@ hunk satırları gerekli." };
+            return { ok: false, output: "No valid unified diff found. --- a/path and @@ hunk lines are required." };
         }
         const filePath = resolvePath(params.cwd ?? ctx.cwd, parsed.file);
         if (!existsSync(filePath)) {
-            return { ok: false, output: `Yamalanacak dosya bulunamadı: ${parsed.file}` };
+            return { ok: false, output: `File to patch not found: ${parsed.file}` };
         }
         const original = readFileSync(filePath, "utf8");
         try {
             const { result, changedLines } = applyHunks(original, parsed.hunks);
             writeFileSync(filePath, result, "utf8");
-            logger.debug(`Patch uygulandi: ${filePath} (${changedLines} satir degisti)`);
-            return { ok: true, output: `Yama uygulandı: ${filePath} (${changedLines} satır değişti)` };
+            logger.debug(`Patch applied: ${filePath} (${changedLines} lines changed)`);
+            return { ok: true, output: `Patch applied: ${filePath} (${changedLines} lines changed)` };
         } catch (err) {
-            return { ok: false, output: `Yama uygulanamadı: ${(err as Error).message}` };
+            return { ok: false, output: `Patch failed: ${(err as Error).message}` };
         }
     }
 };

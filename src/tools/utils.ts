@@ -6,7 +6,7 @@ export function limitOutput(text: string, maxChars?: number): string {
     const limit = maxChars ?? 40_000;
     if (text.length <= limit) return text;
     const truncated = text.slice(0, limit);
-    return `${truncated}\n... [çıktı ${text.length - limit} karakter kesildi]`;
+    return `${truncated}\n... [output truncated: ${text.length - limit} chars removed]`;
 }
 
 export const SKIP_DIRS = new Set<string>([

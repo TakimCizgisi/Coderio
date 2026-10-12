@@ -81,19 +81,19 @@ function parseResults(html: string, maxResults: number): WebSearchResult[] {
 export const webSearchTool: AgentTool = {
     name: "web_search",
     description:
-        "Web'de arama yapar (DuckDuckGo, API anahtarı gerektirmez). Güncel bilgi, haber veya doküman bulmak için kullan. " +
-        "maxResults (varsayılan 5, en fazla 10) kadar sonuç döner: başlık, özet ve URL.",
+        "Searches the web (DuckDuckGo, no API key required). Use to find current information, news or documentation. " +
+        "Returns up to maxResults (default 5, max 10) results: title, snippet and URL.",
     parameters: {
         type: "object",
         properties: {
-            query: { type: "string", description: "Arama sorgusu (İngilizce daha iyi sonuç verir)" },
-            maxResults: { type: "integer", description: "Döndürülecek sonuç sayısı (varsayılan: 5, maks: 10)" }
+            query: { type: "string", description: "Search query (English gives better results)" },
+            maxResults: { type: "integer", description: "Number of results to return (default: 5, max: 10)" }
         },
         required: ["query"]
     },
     handler: async (params: { query: string; maxResults?: number }, ctx) => {
         const query = params.query.trim();
-        if (!query) return { ok: false, output: "Arama sorgusu boş olamaz." };
+        if (!query) return { ok: false, output: "Search query cannot be empty." };
         const maxResults = Math.min(Math.max(params.maxResults ?? 5, 1), 10);
         const timeoutMs = ctx.config.toolTimeout ?? 15_000;
 
@@ -113,7 +113,7 @@ export const webSearchTool: AgentTool = {
                 }
             );
             if (!res.ok) {
-                return { ok: false, output: `Arama başarısız (HTTP ${res.status}): ${res.statusText}` };
+                return { ok: false, output: `Search failed (HTTP ${res.status}): ${res.statusText}` };
             }
             html = await res.text();
         } catch (err) {
@@ -121,8 +121,8 @@ export const webSearchTool: AgentTool = {
             return {
                 ok: false,
                 output: aborted
-                    ? `Arama zaman aşımı (${timeoutMs}ms) veya iptal edildi.`
-                    : `Arama hatası: ${(err as Error).message}`
+                    ? `Search timed out (${timeoutMs}ms) or was cancelled.`
+                    : `Search error: ${(err as Error).message}`
             };
         } finally {
             clearTimeout(timer);
@@ -130,11 +130,11 @@ export const webSearchTool: AgentTool = {
 
         const results = parseResults(html, maxResults);
         if (results.length === 0) {
-            return { ok: true, output: `"${query}" için sonuç bulunamadı.` };
+            return { ok: true, output: `No results found for "${query}".` };
         }
 
         const lines = results.map((r, i) =>
-            `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet || "(özet yok)"}`
+            `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet || "(no snippet)"}`
         );
         return { ok: true, output: limitOutput(lines.join("\n\n"), ctx.config.maxToolOutput) };
     }
@@ -152,20 +152,20 @@ function htmlToText(html: string): string {
 export const fetchUrlTool: AgentTool = {
     name: "fetch_url",
     description:
-        "Bir URL'nin içeriğini indirip metin olarak döner. HTML sayfalar düz metne çevrilir. " +
-        "web_search ile bulunan bir sayfanın detayını okumak için kullan.",
+        "Downloads a URL's content and returns it as text. HTML pages are converted to plain text. " +
+        "Use to read the details of a page found with web_search.",
     parameters: {
         type: "object",
         properties: {
-            url: { type: "string", description: "İndirilecek adres (http/https)" },
-            maxLength: { type: "integer", description: "Döndürülecek maksimum karakter (varsayılan 12000, maks 40000)" }
+            url: { type: "string", description: "Address to download (http/https)" },
+            maxLength: { type: "integer", description: "Maximum characters to return (default 12000, max 40000)" }
         },
         required: ["url"]
     },
     handler: async (params: { url?: string; maxLength?: number }, ctx) => {
         const url = params.url?.trim();
         if (!url || !/^https?:\/\//i.test(url)) {
-            return { ok: false, output: "Geçerli bir http(s) URL gerekli." };
+            return { ok: false, output: "A valid http(s) URL is required." };
         }
         const timeoutMs = ctx.config.toolTimeout ?? 20_000;
         const controller = new AbortController();
@@ -180,22 +180,22 @@ export const fetchUrlTool: AgentTool = {
                 redirect: "follow"
             });
             if (!res.ok) {
-                return { ok: false, output: `İndirme başarısız (HTTP ${res.status}): ${res.statusText}` };
+                return { ok: false, output: `Download failed (HTTP ${res.status}): ${res.statusText}` };
             }
             const contentType = res.headers.get("content-type") ?? "";
             const body = await res.text();
             const isHtml = contentType.includes("text/html") || /^\s*<(!doctype|html)/i.test(body);
             const text = isHtml ? htmlToText(body) : body;
             const maxLen = Math.min(Math.max(params.maxLength ?? 12_000, 500), 40_000);
-            const header = `URL: ${url}\nTür: ${contentType || "bilinmiyor"}\nUzunluk: ${text.length} karakter\n\n`;
+            const header = `URL: ${url}\nType: ${contentType || "unknown"}\nLength: ${text.length} characters\n\n`;
             return { ok: true, output: limitOutput(header + text, maxLen + header.length + 100) };
         } catch (err) {
             const aborted = controller.signal.aborted;
             return {
                 ok: false,
                 output: aborted
-                    ? `Zaman aşımı (${timeoutMs}ms) veya iptal edildi.`
-                    : `İndirme hatası: ${(err as Error).message}`
+                    ? `Timed out (${timeoutMs}ms) or was cancelled.`
+                    : `Download error: ${(err as Error).message}`
             };
         } finally {
             clearTimeout(timer);

@@ -9,46 +9,46 @@ function normalizeLines(text: string): string {
 export const editFileTool: AgentTool = {
     name: "edit_file",
     description:
-        "Bir dosyada tam eşleşen eski metni yeni metinle değiştirir (hedefli düzenleme). " +
-        "Eski metin dosyada yalnızca BİR kez geçmelidir; birden fazla geçiyorsa replaceAll=true kullanın. " +
-        "Küçük ve hedefli değişikliklerde write_file'a göre daha güvenilirdir.",
+        "Replaces exact-matching old text with new text in a file (targeted edit). " +
+        "The old text must appear exactly ONCE in the file; if it appears multiple times, use replaceAll=true. " +
+        "More reliable than write_file for small, targeted changes.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "Düzenlenecek dosyanın yolu" },
-            oldString: { type: "string", description: "Değiştirilecek mevcut metin (birebir eşleşme)" },
-            newString: { type: "string", description: "Eski metnin yerine geçecek yeni metin" },
-            replaceAll: { type: "boolean", description: "true ise tüm eşleşmeleri değiştirir (varsayılan: false)" },
-            cwd: { type: "string", description: "Göreli yolların çözüleceği dizin" }
+            path: { type: "string", description: "Path of the file to edit" },
+            oldString: { type: "string", description: "Existing text to replace (exact match)" },
+            newString: { type: "string", description: "New text that replaces the old text" },
+            replaceAll: { type: "boolean", description: "If true, replace all occurrences (default: false)" },
+            cwd: { type: "string", description: "Directory where relative paths are resolved" }
         },
         required: ["path", "oldString", "newString"]
     },
     handler: async (params: { path: string; oldString: string; newString: string; replaceAll?: boolean; cwd?: string }, ctx) => {
         const filePath = resolveUserPath(params.cwd ?? ctx.cwd, params.path);
         if (!existsSync(filePath)) {
-            return { ok: false, output: `Dosya bulunamadı: ${params.path}` };
+            return { ok: false, output: `File not found: ${params.path}` };
         }
         const original = normalizeLines(readFileSync(filePath, "utf8"));
         const oldText = normalizeLines(params.oldString);
         const newText = normalizeLines(params.newString);
 
         if (oldText.length === 0) {
-            return { ok: false, output: "oldString boş olamaz." };
+            return { ok: false, output: "oldString cannot be empty." };
         }
 
         const count = original.split(oldText).length - 1;
         if (count === 0) {
-            return { ok: false, output: `Eşleşme bulunamadı: "${params.oldString.slice(0, 120)}". Dosya içeriği değişmiş olabilir; read_file ile kontrol edin.` };
+            return { ok: false, output: `No match found: "${params.oldString.slice(0, 120)}". The file content may have changed; check with read_file.` };
         }
         if (count > 1 && !params.replaceAll) {
             return {
                 ok: false,
-                output: `"${params.oldString.slice(0, 120)}" dosyada ${count} kez geçiyor. Tek bir eşleşmeyi hedefleyin ya da replaceAll=true kullanın.`
+                output: `"${params.oldString.slice(0, 120)}" appears ${count} times in the file. Target a single occurrence or use replaceAll=true.`
             };
         }
 
         const result = params.replaceAll ? original.split(oldText).join(newText) : original.replace(oldText, newText);
         writeFileSync(filePath, result, "utf8");
-        return { ok: true, output: `Dosya düzenlendi: ${filePath} (${params.replaceAll ? count : 1} değişiklik)` };
+        return { ok: true, output: `File edited: ${filePath} (${params.replaceAll ? count : 1} replacements)` };
     }
 };

@@ -5,6 +5,6 @@ release/
 *.tgz
 *.log
 .DS_Store
-.ajan/
+.coderio/
 *.tmp
 desktop.ini

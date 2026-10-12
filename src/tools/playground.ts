@@ -3,9 +3,9 @@ import { join } from "node:path";
 import type { AgentTool } from "../config/types.js";
 import { limitOutput } from "./utils.js";
 
-/** Kullanıcının açık klasöründe, projenin içindeki AJAN test klasörü: <cwd>/.ajan */
+/** Kullanıcının açık klasöründe, projenin içindeki Coderio test klasörü: <cwd>/.coderio */
 function playgroundPath(cwd: string): string {
-    const dir = join(cwd, ".ajan");
+    const dir = join(cwd, ".coderio");
     mkdirSync(dir, { recursive: true });
     return dir;
 }
@@ -40,18 +40,18 @@ function clearDir(dir: string): number {
 export const openPlaygroundTool: AgentTool = {
     name: "open_playground",
     description:
-        "Açık klasörün içindeki AJAN TEST KLASÖRÜNÜ (<cwd>/.ajan) hazırlar. " +
-        "Deneme/test/prototip yapmak istediğinde önce bunu çağır. " +
-        "reset=false iken masaarkadaşları korur; reset=true ise klasörü bomboş hale getirir. " +
-        "Kullanıcının gerçek proje dosyalarına kesinlikle dokunmaz; tüm denemeler bu klasörde yapılır.",
+        "Prepares the CODERIO PLAYGROUND FOLDER (<cwd>/.coderio) inside the open folder. " +
+        "Call this first when you want to run experiments/tests/prototypes. " +
+        "With reset=false it keeps existing contents; with reset=true it empties the folder. " +
+        "It never touches the user's real project files; all experiments happen in this folder.",
     parameters: {
         type: "object",
         properties: {
             reset: {
                 type: "boolean",
-                description: "true ise .ajan içeriğini komple temizler (varsayılan: false)"
+                description: "If true, completely clears the .coderio contents (default: false)"
             },
-            note: { type: "string", description: "Ne yapacağın hakkında kısa bir not (opsiyonel)" }
+            note: { type: "string", description: "Short note about what you are going to do (optional)" }
         },
         required: []
     },
@@ -62,11 +62,11 @@ export const openPlaygroundTool: AgentTool = {
         if (params.reset) cleared = clearDir(dir);
         const after = readdirSync(dir).length;
         const lines = [
-            `.ajan test klasörü hazır: ${dir}`,
-            `Önceki içerik: ${before} öğe; sonraki içerik: ${after} öğe${cleared > 0 ? ` (${cleared} temizlendi)` : ""}`
+            `.coderio playground ready: ${dir}`,
+            `Previous contents: ${before} items; now: ${after} items${cleared > 0 ? ` (${cleared} removed)` : ""}`
         ];
-        if (params.note) lines.push(`Not: ${params.note}`);
-        lines.push("KURAL: tüm denemeleri, geçici dosyaları ve riskli testleri BURADA yap; asıl projeye dokunma.");
+        if (params.note) lines.push(`Note: ${params.note}`);
+        lines.push("RULE: run all experiments, temp files and risky tests HERE; do not touch the real project.");
         return { ok: true, output: lines.join("\n") };
     }
 };
@@ -74,20 +74,20 @@ export const openPlaygroundTool: AgentTool = {
 export const setTodosTool: AgentTool = {
     name: "set_todos",
     description:
-        "Görev programını (.ajan/todos.json) günceller. " +
-        "Bir göreve başlarken önce kısa bir TODO listesi planla ve bu araçla kaydet. " +
-        "done=false adım halen beklemede, done=true tamamlandı demektir.",
+        "Updates the task schedule (.coderio/todos.json). " +
+        "When starting a task, first plan a short TODO list and save it with this tool. " +
+        "done=false means the step is still pending, done=true means completed.",
     parameters: {
         type: "object",
         properties: {
             todos: {
                 type: "array",
-                description: "Yapılacaklar listesi",
+                description: "List of things to do",
                 items: {
                     type: "object",
                     properties: {
-                        text: { type: "string", description: "Adım açıklaması" },
-                        done: { type: "boolean", description: "Tamamlandı mı (varsayılan false)" }
+                        text: { type: "string", description: "Step description" },
+                        done: { type: "boolean", description: "Whether completed (default false)" }
                     },
                     required: ["text"]
                 }
@@ -97,24 +97,24 @@ export const setTodosTool: AgentTool = {
     },
     handler: async (params: { todos?: TodoItem[] }, ctx) => {
         const raw = params.todos;
-        if (!raw || raw.length === 0) return { ok: false, output: "todos listesi boş olamaz." };
+        if (!raw || raw.length === 0) return { ok: false, output: "todos list cannot be empty." };
         const items: TodoItem[] = raw.map((t) => ({
             text: String(t.text ?? "").trim(),
             done: t.done === true
         }));
-        if (items.some((t) => !t.text)) return { ok: false, output: "Her TODO maddesi için text gerekli." };
+        if (items.some((t) => !t.text)) return { ok: false, output: "Every TODO item requires text." };
         writeFileSync(todosPath(ctx.cwd), JSON.stringify(items, null, 2), "utf8");
         const lines = items.map((t, i) => `${t.done ? "[x]" : "[ ]"} ${i + 1}. ${t.text}`);
         return {
             ok: true,
-            output: `TODO listesi kaydedildi (${items.length} madde): ${todosPath(ctx.cwd)}\n${lines.join("\n")}`
+            output: `TODO list saved (${items.length} items): ${todosPath(ctx.cwd)}\n${lines.join("\n")}`
         };
     }
 };
 
 export const getTodosTool: AgentTool = {
     name: "get_todos",
-    description: "Görev programını (.ajan/todos.json) okur. Kayıtlı TODO varsa döndürür, yoksa boş döner.",
+    description: "Reads the task schedule (.coderio/todos.json). Returns saved TODOs if any, otherwise an empty result.",
     parameters: {
         type: "object",
         properties: {}
@@ -122,9 +122,9 @@ export const getTodosTool: AgentTool = {
     handler: async (_params: unknown, ctx) => {
         const items = loadTodos(ctx.cwd);
         if (items.length === 0) {
-            return { ok: true, output: "Kayıtlı TODO yok. Göreve başlarken set_todos ile plan oluştur." };
+            return { ok: true, output: "No saved TODOs. Plan your work with set_todos when starting a task." };
         }
         const lines = items.map((t, i) => `${t.done ? "[x]" : "[ ]"} ${i + 1}. ${t.text}`);
-        return { ok: true, output: limitOutput(`Görev programı (${items.length} madde):\n${lines.join("\n")}`, ctx.config.maxToolOutput) };
+        return { ok: true, output: limitOutput(`Task schedule (${items.length} items):\n${lines.join("\n")}`, ctx.config.maxToolOutput) };
     }
 };

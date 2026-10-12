@@ -23,14 +23,14 @@ function blockedBy(patterns: string[], command: string): string | null {
 export const runCommandTool: AgentTool = {
     name: "run_command",
     description:
-        "Terminal komutu çalıştırır. cwd, komutun çalıştırılacağı dizindir (varsayılan: ajanın çalışma dizini). " +
-        "timeout ms cinsinden zaman aşımıdır (varsayılan: 60000). Çıktı maksimum uzunlukta kesilir.",
+        "Runs a terminal command. cwd is the directory the command runs in (default: the assistant's working directory). " +
+        "timeout is the timeout in milliseconds (default: 60000). Output is truncated at maximum length.",
     parameters: {
         type: "object",
         properties: {
-            command: { type: "string", description: "Çalıştırılacak terminal komutu" },
-            cwd: { type: "string", description: "Çalışma dizini (ajanın dizinine göre göreli veya mutlak yol)" },
-            timeout: { type: "integer", description: "Zaman aşımı milisaniye" }
+            command: { type: "string", description: "Terminal command to run" },
+            cwd: { type: "string", description: "Working directory (relative to the assistant's directory or absolute)" },
+            timeout: { type: "integer", description: "Timeout in milliseconds" }
         },
         required: ["command"]
     },
@@ -46,9 +46,9 @@ export const runCommandTool: AgentTool = {
             return {
                 ok: false,
                 output:
-                    `Komut engellendi (tehlikeli komut deseni: ${blocked}).\n` +
-                    `Engellenen komut: ${params.command}\n` +
-                    'İzin vermek için config.json\'daki "blockedCommands" alanını değiştirin ([] boş liste = tümü serbest).'
+                    `Command blocked (dangerous command pattern: ${blocked}).\n` +
+                    `Blocked command: ${params.command}\n` +
+                    'To allow it, change the "blockedCommands" field in config.json ([] empty list = everything allowed).'
             };
         }
 
@@ -119,7 +119,7 @@ export const runCommandTool: AgentTool = {
                     if (stderr.length > 2_000_000) child.stderr?.pause();
                 });
                 child.on("error", (err) => {
-                    stderr += `Komut başlatılamadı: ${err.message}`;
+                    stderr += `Failed to start command: ${err.message}`;
                     finish(null);
                 });
                 child.on("close", (code) => finish(code));
@@ -127,8 +127,8 @@ export const runCommandTool: AgentTool = {
         );
 
         const parts: string[] = [];
-        if (result.timedOut) parts.push(`[ZAMAN AŞIMI ${timeoutMs}ms]`);
-        parts.push(`Çıkış kodu: ${result.code}`);
+        if (result.timedOut) parts.push(`[TIMEOUT ${timeoutMs}ms]`);
+        parts.push(`Exit code: ${result.code}`);
         if (result.stdout.trim()) parts.push(`--- STDOUT ---\n${result.stdout.trimEnd()}`);
         if (result.stderr.trim()) parts.push(`--- STDERR ---\n${result.stderr.trimEnd()}`);
 

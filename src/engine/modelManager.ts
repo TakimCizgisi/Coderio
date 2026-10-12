@@ -36,9 +36,9 @@ export function formatTime(ms: number): string {
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
-    if (h > 0) return `${h}sa ${m}dk`;
-    if (m > 0) return `${m}dk ${s}sn`;
-    return `${s}sn`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
 }
 
 export async function downloadModel(
@@ -49,11 +49,11 @@ export async function downloadModel(
     const targetPath = resolveModelFilePath(model);
 
     if (existsSync(targetPath)) {
-        logger.info(`Model zaten mevcut: ${targetPath}`);
+        logger.info(`Model already present: ${targetPath}`);
         return targetPath;
     }
 
-    logger.info(`Model indiriliyor: ${model.uri}`);
+    logger.info(`Downloading model: ${model.uri}`);
     const downloader = await createModelDownloader({
         modelUri: model.uri,
         dirPath,
@@ -67,7 +67,7 @@ export async function downloadModel(
     });
 
     const downloadedPath = await downloader.download({ signal: options.signal });
-    logger.info(`Model indirildi: ${downloadedPath}`);
+    logger.info(`Model downloaded: ${downloadedPath}`);
     return downloadedPath;
 }
 

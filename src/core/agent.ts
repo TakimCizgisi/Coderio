@@ -4,7 +4,7 @@ import { LlamaEngine, type ActiveGpu } from "../engine/llama.js";
 import { buildSessionFunctions, createCoreTools, type ToolEvents } from "../tools/registry.js";
 import type {
     AgentTool,
-    AjanConfig,
+    CoderioConfig,
     ModelDefinition,
     ReasoningMode,
     ToolExecutionContext,
@@ -44,7 +44,7 @@ export type AgentEvents = {
 
 export type AgentOptions = {
     model?: ModelDefinition;
-    config?: AjanConfig;
+    config?: CoderioConfig;
     modelPath?: string;
     cwd?: string;
     tools?: AgentTool[];
@@ -55,7 +55,7 @@ export type AgentOptions = {
     temperature?: number;
 };
 
-export type AjanTaskResult = {
+export type CoderioTaskResult = {
     response: string;
     steps: number;
     maxSteps: number;
@@ -63,11 +63,11 @@ export type AjanTaskResult = {
     budgetExhausted: boolean;
 };
 
-export class AjanAgent {
+export class CoderioAgent {
     private engine: LlamaEngine | undefined;
     private session: LlamaChatSession | undefined;
     private readonly model: ModelDefinition;
-    private readonly config: AjanConfig;
+    private readonly config: CoderioConfig;
     private readonly modelPath: string;
     private readonly cwd: string;
     private systemPrompt: string;
@@ -78,12 +78,13 @@ export class AjanAgent {
     private readonly signal?: AbortSignal;
     private readonly temperature?: number;
     private pendingHistory: ChatHistoryItem[] | undefined;
+    private sessionPromise: Promise<LlamaChatSession> | undefined;
 
     /**
      * Yayın hedefini değiştirir.
      *
      * Daemon tek modeli paylaştığı için her sohbet isteğinin çıktısı yalnızca
-     * soran istemciye gitmelidir. Ajanı yeniden kurmadan yönlendirme değiştirmek,
+     * soran istemciye gitmelidir. Asistanı yeniden kurmadan yönlendirme değiştirmek,
      * yüklü modeli bozmadan yayını daraltmanın tek yoludur.
      */
     setEvents(events: AgentEvents): void {
@@ -106,7 +107,7 @@ export class AjanAgent {
             const id = config.modelId;
             const found = getModelById(id);
             if (!found) {
-                throw new Error(`Model bulunamadı: ${id}. 'ajan model list' ile uygun modelleri görün.`);
+                throw new Error(`Model not found: ${id}. Pick a model from the model list in Coderio.`);
             }
             this.model = found;
         }
@@ -116,9 +117,10 @@ export class AjanAgent {
         // ne yapılması gerektiğini söyleyen bir hata ver.
         if (!existsSync(this.modelPath)) {
             throw new Error(
-                `Model dosyası bulunamadı: ${this.model.name} (${this.model.id}).\n` +
-                `Beklenen: ${this.modelPath}\n` +
-                `AJAN ile bu modeli indir: ajan models install ${this.model.id}`
+                `Model file not found: ${this.model.name} (${this.model.id}).\n` +
+                `Expected: ${this.modelPath}\n` +
+                `Install this model from the Coderio UI: ${this.model.id}\n` +
+                `Expected file: ${this.modelPath}`
 
             );
         }
@@ -131,8 +133,8 @@ export class AjanAgent {
         if (modelSystemPrompt) {
             basePrompt =
                 modelSystemPrompt +
-                `\n- Çalışma dizini: ${this.cwd}. Dosya yollarında göreli yol kullan (örn. src/index.ts).\n` +
-                `- Deneme/test alanın: ${this.cwd}/.ajan. Deneme, prototip ve riskli testleri burada yap (open_playground); asıl projeye ancak doğruladıktan sonra uygula.`;
+                `\n- Working directory: ${this.cwd}. Use relative paths in file references (e.g. src/index.ts).\n` +
+                `- Your playground: ${this.cwd}/.coderio. Run experiments, prototypes and risky tests here (open_playground); apply to the real project only after verifying.`;
         } else {
             basePrompt = buildDefaultSystemPrompt(this.cwd);
         }
@@ -189,6 +191,10 @@ export class AjanAgent {
 
     private async ensureSession(signal?: AbortSignal): Promise<LlamaChatSession> {
         if (this.session) return this.session;
+        if (this.sessionPromise) return this.sessionPromise;
+
+        // Ön yükleme (warm-up) ile ilk mesaj aynı anda beklerse iki ayrı motor
+        // kurulmasın: kurulum tek bir promise'da paylaşılır.
         this.engine = new LlamaEngine({
             modelPath: this.modelPath,
             config: this.config,
@@ -199,14 +205,37 @@ export class AjanAgent {
             onProgress: (pct) => this.onLoadProgress?.(pct),
             signal: signal ?? this.signal
         });
-        await this.engine.createContext();
-        this.onLoadComplete?.();
-        this.session = this.engine.createSession(this.systemPrompt);
-        if (this.pendingHistory) {
-            this.session.setChatHistory(this.pendingHistory);
-            this.pendingHistory = undefined;
-        }
-        return this.session;
+        this.sessionPromise = this.engine
+            .createContext()
+            .then(() => {
+                this.onLoadComplete?.();
+                this.session = this.engine!.createSession(this.systemPrompt);
+                if (this.pendingHistory) {
+                    this.session.setChatHistory(this.pendingHistory);
+                    this.pendingHistory = undefined;
+                }
+                return this.session;
+            })
+            .catch((err) => {
+                this.sessionPromise = undefined;
+                throw err;
+            });
+        return this.sessionPromise;
+    }
+
+    /**
+     * Modeli arka planda hazırlar (açılışta sıcak tutar).
+     *
+     * Kurulu modelle çalışır; model yoksa hata atar. Sonraki istekler bu
+     * hazır oturumu kullanır, model bir daha yüklenmez.
+     */
+    async warmUp(): Promise<void> {
+        await this.ensureSession();
+    }
+
+    /** Model oturumu kurulmuş ve kullanıma hazır mı? */
+    get isWarm(): boolean {
+        return this.session !== undefined;
     }
 
     async prompt(userPrompt: string, options?: { signal?: AbortSignal }): Promise<string> {
@@ -219,7 +248,7 @@ export class AjanAgent {
      * Döngü şuralarda biter: task_complete aracı, araçsız bir tur (nihai özet),
      * adım bütçesi dolması veya iptal sinyali.
      */
-    async promptTask(userPrompt: string, options?: { signal?: AbortSignal }): Promise<AjanTaskResult> {
+    async promptTask(userPrompt: string, options?: { signal?: AbortSignal }): Promise<CoderioTaskResult> {
         try {
             return await this.runTask(userPrompt, options);
         } catch (err) {
@@ -227,14 +256,14 @@ export class AjanAgent {
             const aborted = err instanceof Error && (err.name === "AbortError" || /abort/i.test(err.message));
             if (!aborted) {
                 const error = err instanceof Error ? err : new Error(String(err));
-                logger.error(`Gorev hatasi: ${error.message}`);
+                logger.error(`Task error: ${error.message}`);
                 this.events.onError?.(error);
             }
             throw err;
         }
     }
 
-    private async runTask(userPrompt: string, options?: { signal?: AbortSignal } | undefined): Promise<AjanTaskResult> {
+    private async runTask(userPrompt: string, options?: { signal?: AbortSignal } | undefined): Promise<CoderioTaskResult> {
         const session = await this.ensureSession(options?.signal ?? this.signal);
         const signals: ToolExecutionSignal = {};
         const ctx: ToolExecutionContext = {
@@ -258,7 +287,7 @@ export class AjanAgent {
         const runRound = (promptText: string): Promise<string> => {
             toolCallsThisRound = 0;
             this.trimContextIfNeeded();
-            logger.debug(`Prompt gonderiliyor (${promptText.length} karakter)`);
+            logger.debug(`Sending prompt (${promptText.length} characters)`);
             return session.prompt(promptText, {
                 functions,
                 documentFunctionParams: true,
@@ -278,9 +307,9 @@ export class AjanAgent {
         };
 
         const continuePrompt =
-            "Devam et. (Bir önceki turda task_complete ile continue:true istedin veya işin yarıda kaldı.) " +
-            "Kalan adımları araçlarla tamamla. Görevi sürdürmek istersen yine task_complete(continue:true) çağır; " +
-            "her şey bitip doğrulandığında task_complete(continue:false) ile bitir.";
+            "Continue. (In the previous round you asked task_complete with continue:true, or the work was left half done.) " +
+            "Finish the remaining steps with tools. If you want to keep going, call task_complete(continue:true) again; " +
+            "when everything is done and verified, finish with task_complete(continue:false).";
 
         // Model kendi kararıyla sürdürür/durur: task_complete(continue:true) yeni tur açar,
         // task_complete(continue:false) veya araçsız son yanıt akışı bitirir.
@@ -337,8 +366,42 @@ export class AjanAgent {
         const removed = history.length - kept.length;
         if (removed > 0) {
             this.session.setChatHistory(kept);
-            logger.info(`Context sıkıştırıldı: ${removed} mesaj kırpıldı (${used} token)`);
+            logger.info(`Context trimmed: ${removed} messages dropped (${used} tokens)`);
             this.events.onContextTrimmed?.(removed);
+        }
+    }
+
+    /**
+     * Kullanıcının ilk mesajından kısa, her zaman İngilizce bir konu başlığı üretir.
+     *
+     * Yalnızca yeni bir sohbetin başında çağrılır. Ana konuşma geçmişine
+     * dokunmaz: aynı oturumda yapılan üretim (servis kuyruğu seri olduğu için
+     * model çakışması olmaz) bittikten sonra geçmiş üretim öncesi haline geri
+     * alınır. Başarısız olursa boş döner; çağıran fallback başlığı kullanır.
+     */
+    async generateTitle(userText: string): Promise<string> {
+        const session = await this.ensureSession();
+        const before = session.getChatHistory();
+        try {
+            const instruction =
+                "Generate a short English title (2-5 words) for the conversation topic below. " +
+                "Reply with ONLY the title. No punctuation, no quotes, no extra words.\n\n" +
+                `User message: ${userText.slice(0, 800)}`;
+            // Düşünme segmentleri başlığı kirletmesin: yalnızca düz metin toplanır.
+            const chunks: string[] = [];
+            const full = await session.prompt(instruction, {
+                temperature: 0.3,
+                maxTokens: 24,
+                topP: 0.9,
+                onResponseChunk: (chunk) => {
+                    if (chunk.type === "segment" && chunk.segmentType === "thought") return;
+                    chunks.push(chunk.text);
+                }
+            });
+            return sanitizeTitle(chunks.join("").trim() || full);
+        } finally {
+            // Başlık üretimi konuşmayı kirletmemeli.
+            session.setChatHistory(before);
         }
     }
 
@@ -375,5 +438,17 @@ export class AjanAgent {
         await this.engine?.dispose();
         this.engine = undefined;
         this.session = undefined;
+        this.sessionPromise = undefined;
     }
+}
+
+/** Modelin ürettiği başlığı temizler: tırnak/yıldız kalkar, tek satıra iner. */
+function sanitizeTitle(raw: string): string {
+    let title = raw
+        .replace(/[""'“”‘’*_]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    // Trailing noktalama ve parantezleri sil; uzunluğu sınırla.
+    const cleaned = title.replace(/[.…\[\]{}()<>!?;:,]+$/g, "").trim();
+    return cleaned.length > 60 ? `${cleaned.slice(0, 60)}`.trimEnd() : cleaned;
 }

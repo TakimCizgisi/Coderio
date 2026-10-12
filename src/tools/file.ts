@@ -23,29 +23,29 @@ function normalizeLines(text: string): string {
 
 export const readFileTool: AgentTool = {
     name: "read_file",
-    description: "Bir dosyanın içeriğini okur. Büyük dosyalar için offset/limit ile kısmi okuma yapılabilir.",
+    description: "Reads a file's content. For large files, partial reading with offset/limit is possible.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "Okunacak dosyanın yolu (cwd'ye göre göreli veya mutlak)" },
-            offset: { type: "integer", description: "Başlangıç satır numarası (1 tabanlı)" },
-            limit: { type: "integer", description: "Okunacak maksimum satır sayısı" }
+            path: { type: "string", description: "Path of the file to read (relative to cwd or absolute)" },
+            offset: { type: "integer", description: "Start line number (1-based)" },
+            limit: { type: "integer", description: "Maximum number of lines to read" }
         },
         required: ["path"]
     },
     handler: async (params: { path: string; offset?: number; limit?: number }, ctx) => {
         const filePath = resolvePath(ctx.cwd, params.path);
         if (!existsSync(filePath)) {
-            return { ok: false, output: `Dosya bulunamadı: ${params.path}` };
+            return { ok: false, output: `File not found: ${params.path}` };
         }
         const stat = statSync(filePath);
         if (!stat.isFile()) {
-            return { ok: false, output: `Bu bir dosya değil: ${params.path}` };
+            return { ok: false, output: `Not a file: ${params.path}` };
         }
         if (stat.size > 2 * 1024 * 1024 && !params.offset && !params.limit) {
             return {
                 ok: false,
-                output: `Dosya çok büyük (${stat.size} bayt). offset/limit parametreleriyle kısmi okuma yapın.`
+                output: `File too large (${stat.size} bytes). Read partially with offset/limit parameters.`
             };
         }
         const content = normalizeLines(readFileSync(filePath, "utf8"));
@@ -55,7 +55,7 @@ export const readFileTool: AgentTool = {
         const end = params.limit ? Math.min(totalLines, start + params.limit - 1) : totalLines;
         const slice = lines.slice(start - 1, end);
         const numbered = slice.map((line, i) => `${String(start + i).padStart(6)} | ${line}`).join("\n");
-        const header = `Dosya: ${filePath}\nSatırlar: ${start}-${end} / ${totalLines}\n`;
+        const header = `File: ${filePath}\nLines: ${start}-${end} / ${totalLines}\n`;
         return { ok: true, output: header + numbered };
     }
 };
@@ -63,14 +63,14 @@ export const readFileTool: AgentTool = {
 export const writeFileTool: AgentTool = {
     name: "write_file",
     description:
-        "Bir dosyaya içerik yazar (oluşturur veya üzerine yazar). append=true ise sona ekler. " +
-        "Klasörler otomatik oluşturulur.",
+        "Writes content to a file (creates or overwrites). With append=true it appends at the end. " +
+        "Folders are created automatically.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "Yazılacak dosyanın yolu" },
-            content: { type: "string", description: "Dosya içeriği" },
-            append: { type: "boolean", description: "true ise içeriği dosyanın sonuna ekler (varsayılan: false)" }
+            path: { type: "string", description: "Path of the file to write" },
+            content: { type: "string", description: "File content" },
+            append: { type: "boolean", description: "If true, append content at the end of the file (default: false)" }
         },
         required: ["path", "content"]
     },
@@ -79,28 +79,28 @@ export const writeFileTool: AgentTool = {
         mkdirSync(dirname(filePath), { recursive: true });
         const content = normalizeLines(params.content);
         writeFileSync(filePath, content, { encoding: "utf8", flag: params.append ? "a" : "w" });
-        const action = params.append ? "eklendi" : "yazıldı";
-        return { ok: true, output: `Dosya ${action}: ${filePath} (${Buffer.byteLength(content)} bayt)` };
+        const action = params.append ? "appended to" : "written to";
+        return { ok: true, output: `File ${action}: ${filePath} (${Buffer.byteLength(content)} bytes)` };
     }
 };
 
 export const listDirTool: AgentTool = {
     name: "list_dir",
-    description: "Bir dizindeki dosya ve klasörleri listeler. recursive=true ile alt dizinler de dahil edilir.",
+    description: "Lists files and folders in a directory. With recursive=true, subdirectories are included too.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "Listelenecek dizin (varsayılan: cwd)" },
-            recursive: { type: "boolean", description: "Alt dizinleri de listele (varsayılan: false)" }
+            path: { type: "string", description: "Directory to list (default: cwd)" },
+            recursive: { type: "boolean", description: "Also list subdirectories (default: false)" }
         }
     },
     handler: async (params: { path?: string; recursive?: boolean }, ctx) => {
         const dirPath = resolvePath(ctx.cwd, params.path ?? ".");
         if (!existsSync(dirPath)) {
-            return { ok: false, output: `Dizin bulunamadı: ${params.path ?? "."}` };
+            return { ok: false, output: `Directory not found: ${params.path ?? "."}` };
         }
         if (!statSync(dirPath).isDirectory()) {
-            return { ok: false, output: `Bu bir dizin değil: ${params.path ?? "."}` };
+            return { ok: false, output: `Not a directory: ${params.path ?? "."}` };
         }
         const entries: string[] = [];
         let skippedCount = 0;
@@ -111,7 +111,7 @@ export const listDirTool: AgentTool = {
             try {
                 children = readdirSync(current, { withFileTypes: true });
             } catch (err) {
-                entries.push(`  ${"  ".repeat(depth)}[hata: ${(err as Error).message}]`);
+                entries.push(`  ${"  ".repeat(depth)}[error: ${(err as Error).message}]`);
                 return;
             }
             for (const child of children) {
@@ -134,26 +134,26 @@ export const listDirTool: AgentTool = {
                     } catch {
                         size = 0;
                     }
-                    entries.push(`${indent}${rel} (${size} bayt)`);
+                    entries.push(`${indent}${rel} (${size} bytes)`);
                 }
             }
         };
         walk(dirPath, 0);
-        let output = `Dizin: ${dirPath}\n${entries.join("\n")}`;
-        if (skippedCount > 0) output += `\n(... ${skippedCount} ağır/gizli klasör atlandı: node_modules, .git, dist, build vb.)`;
-        if (entries.length >= MAX_ENTRIES) output += `\n(... ${entries.length} öğe sınırına ulaşıldı)`; 
+        let output = `Directory: ${dirPath}\n${entries.join("\n")}`;
+        if (skippedCount > 0) output += `\n(... ${skippedCount} heavy/hidden folders skipped: node_modules, .git, dist, build etc.)`;
+        if (entries.length >= MAX_ENTRIES) output += `\n(... reached the limit of ${entries.length} entries)`; 
         return { ok: true, output: limitOutput(output, ctx.config.maxToolOutput) };
     }
 };
 
 export const searchFilesTool: AgentTool = {
     name: "search_files",
-    description: "Bir dizindeki dosyaları isim desenine (glob) göre arar.",
+    description: "Searches files in a directory by name pattern (glob).",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "Aranacak dizin (varsayılan: cwd)" },
-            pattern: { type: "string", description: "Glob deseni, ör. '*.ts' veya '**/*.ts'" }
+            path: { type: "string", description: "Directory to search (default: cwd)" },
+            pattern: { type: "string", description: "Glob pattern, e.g. '*.ts' or '**/*.ts'" }
         },
         required: ["pattern"]
     },
@@ -183,20 +183,20 @@ export const searchFilesTool: AgentTool = {
             }
         };
         walk(dirPath, 0);
-        const result = matches.length > 0 ? matches.join("\n") : "Eşleşen dosya bulunamadı.";
+        const result = matches.length > 0 ? matches.join("\n") : "No matching files found.";
         return { ok: true, output: `Glob: ${params.pattern}\n${result}` };
     }
 };
 
 export const grepTool: AgentTool = {
     name: "grep_files",
-    description: "Dosyalarda içerik araması yapar. pattern bir regex'dir.",
+    description: "Searches inside file contents. pattern is a regex.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "Aranacak dizin (varsayılan: cwd)" },
-            pattern: { type: "string", description: "Regex deseni" },
-            include: { type: "string", description: "Dosya deseni filtresi, ör. '*.ts'" }
+            path: { type: "string", description: "Directory to search (default: cwd)" },
+            pattern: { type: "string", description: "Regex pattern" },
+            include: { type: "string", description: "File pattern filter, e.g. '*.ts'" }
         },
         required: ["pattern"]
     },
@@ -206,7 +206,7 @@ export const grepTool: AgentTool = {
         try {
             regex = new RegExp(params.pattern);
         } catch (err) {
-            return { ok: false, output: `Geçersiz regex deseni: ${(err as Error).message}` };
+            return { ok: false, output: `Invalid regex pattern: ${(err as Error).message}` };
         }
         let includeRe: RegExp | null = null;
         if (params.include) {

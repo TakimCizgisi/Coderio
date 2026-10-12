@@ -75,9 +75,11 @@ export type SessionConfig = {
     dryRepeatPenalty?: boolean;
 };
 
-export type AjanConfig = {
+export type CoderioConfig = {
     /** Seçili model kimliği */
     modelId: string;
+    /** Model uygulama açılışında arka planda yüklensin mi? Açıksa "always", kapalıysa ilk mesajda yüklenir. */
+    autostartModel?: boolean;
     /** Sistem promptu */
     systemPrompt?: string;
     /** Bağlam boyutu */
@@ -121,7 +123,7 @@ export type ToolExecutionSignal = {
 
 export type ToolExecutionContext = {
     cwd: string;
-    config: AjanConfig;
+    config: CoderioConfig;
     signals?: ToolExecutionSignal;
 };
 

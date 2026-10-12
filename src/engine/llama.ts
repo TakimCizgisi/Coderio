@@ -17,7 +17,7 @@ import {
     type ChatWrapper,
     type ChatSessionModelFunctions
 } from "node-llama-cpp";
-import type { AjanConfig, ChatWrapperName } from "../config/types.js";
+import type { CoderioConfig, ChatWrapperName } from "../config/types.js";
 import { logger } from "../utils/paths.js";
 
 /** Motorun gerçekten üzerinde çalıştığı arka uç */
@@ -30,15 +30,15 @@ export type ActiveGpu = {
 
 export type LlamaEngineOptions = {
     modelPath: string;
-    config: AjanConfig;
+    config: CoderioConfig;
     chatWrapperName?: ChatWrapperName;
     /** Düşünme (thought) üretimi açık mı; belirtilmezse sarmalayıcının varsayılanı. */
     reasoning?: boolean;
     /** Modele özel bağlam penceresi; yoksa config.contextSize kullanılır. */
-    contextSize?: AjanConfig["contextSize"];
+    contextSize?: CoderioConfig["contextSize"];
     /** Modele özel GPU katman sayısı; yoksa config.gpuLayers kullanılır. */
-    gpuLayers?: AjanConfig["gpuLayers"];
-    gpuBackend?: AjanConfig["gpu"];
+    gpuLayers?: CoderioConfig["gpuLayers"];
+    gpuBackend?: CoderioConfig["gpu"];
     onProgress?: (progress: number) => void;
     signal?: AbortSignal;
 };
@@ -50,13 +50,13 @@ export class LlamaEngine {
     private sequence: LlamaContextSequence | undefined;
     private session: LlamaChatSession | undefined;
     private readonly modelPath: string;
-    private readonly config: AjanConfig;
+    private readonly config: CoderioConfig;
     private readonly chatWrapperName?: ChatWrapperName;
     /** Katalog + kullanıcı geçersiz kılmasından çözülmüş düşünme modu */
     private readonly reasoning?: boolean;
-    private readonly contextSizeOption: AjanConfig["contextSize"];
-    private readonly gpuLayersOption: AjanConfig["gpuLayers"];
-    private readonly gpuBackend?: AjanConfig["gpu"];
+    private readonly contextSizeOption: CoderioConfig["contextSize"];
+    private readonly gpuLayersOption: CoderioConfig["gpuLayers"];
+    private readonly gpuBackend?: CoderioConfig["gpu"];
     private readonly onProgress?: (progress: number) => void;
     private readonly signal?: AbortSignal;
 
@@ -153,9 +153,9 @@ export class LlamaEngine {
 
     async init(): Promise<void> {
         if (this.llama) return;
-        logger.info(`Motor baslatiliyor... (model: ${this.modelPath})`);
+        logger.info(`Starting engine... (model: ${this.modelPath})`);
         const supportedGpus = await LlamaEngine.detectSupportedGpus();
-        logger.debug(`Desteklenen GPU'lar: ${supportedGpus.join(", ") || "yok (CPU)"}`);
+        logger.debug(`Supported GPUs: ${supportedGpus.join(", ") || "none (CPU)"}`);
 
         // Sırayla dene: ilk yüklenen kazanır. Sessizce CPU'ya düşmüyoruz —
         // kullanıcı hangi adaya geçildiğini ve nedenini görsün.
@@ -174,13 +174,13 @@ export class LlamaEngine {
             } catch (err) {
                 const reason = firstLine((err as Error).message);
                 failures.push(`${candidate}: ${reason}`);
-                logger.warn(`${candidate} kullanilamadi (${reason})`);
+                logger.warn(`${candidate} failed (${reason})`);
             }
         }
 
-        // Zincirin tamamı tuttu. Sessiz yavaşlamak yerine açıkça hata ver.
+        // The whole chain failed. Instead of silently slowing down, fail explicitly.
         throw new Error(
-            `GPU motoru baslatilamadi. Denenenler -> ${failures.join(" | ")}`
+            `GPU engine failed to start. Tried -> ${failures.join(" | ")}`
         );
     }
 
@@ -193,16 +193,16 @@ export class LlamaEngine {
         if (!active) return;
         if (active === "cpu") {
             logger.warn(
-                `GPU kullanilamiyor, CPU uzerinde calisiliyor. ` +
-                    `istenen: ${this.gpuOption} · makinede: ${supportedGpus.join(", ") || "yok"}`
+                `GPU unavailable, running on CPU. ` +
+                    `requested: ${this.gpuOption} · available: ${supportedGpus.join(", ") || "none"}`
             );
             return;
         }
         if (!hadFallbacks) return;
         if (loaded === "auto" && active !== this.gpuOption) {
-            logger.warn(`istenen arka uc ${this.gpuOption}, yuklenen ${active}`);
+            logger.warn(`requested backend ${this.gpuOption}, loaded ${active}`);
         } else {
-            logger.info(`GPU arka ucu: ${active}`);
+            logger.info(`GPU backend: ${active}`);
         }
     }
 
@@ -214,7 +214,7 @@ export class LlamaEngine {
     async loadModel(onProgress?: (pct: number) => void): Promise<void> {
         await this.init();
         if (this.model) return;
-        logger.info(`Model yukleniyor: ${this.modelPath}`);
+        logger.info(`Loading model: ${this.modelPath}`);
 
         this.model = await this.llama!.loadModel({
             modelPath: this.modelPath,
@@ -238,7 +238,7 @@ export class LlamaEngine {
     }
 
     createSession(systemPrompt: string): LlamaChatSession {
-        if (!this.sequence) throw new Error("Oturum olusturmadan once context olusturulmali (createContext)");
+        if (!this.sequence) throw new Error("Context must be created before creating a session (createContext)");
         const wrapper = resolveChatWrapper(this.chatWrapperName ?? "auto", this.reasoning);
         this.session = new LlamaChatSession({
             contextSequence: this.sequence,
@@ -250,7 +250,7 @@ export class LlamaEngine {
 
     /** Konuşma geçmişini temizler ve yeni sistem promptu ile taze bir oturum kurar */
     async resetSession(systemPrompt: string): Promise<LlamaChatSession> {
-        if (!this.sequence) throw new Error("Oturum olusturmadan once context olusturulmali (createContext)");
+        if (!this.sequence) throw new Error("Context must be created before creating a session (createContext)");
         await this.session?.dispose();
         await this.sequence.clearHistory();
         return this.createSession(systemPrompt);

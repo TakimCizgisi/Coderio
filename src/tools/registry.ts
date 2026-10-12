@@ -54,19 +54,19 @@ export function buildSessionFunctions(
             params: tool.parameters as never,
             handler: async (params: any) => {
                 events.onToolCall?.(tool.name, params);
-                logger.debug(`Arac cagirildi: ${tool.name}`);
+                logger.debug(`Tool called: ${tool.name}`);
                 try {
                     const res = await tool.handler(params, ctx);
                     events.onToolResult?.(tool.name, res.ok, res.output);
                     if (res.ok) return res.output;
                     return (
-                        `HATA (${tool.name}): ${res.output} | ` +
-                        "NOT: Araç başarısız oldu; bu işlem GERÇEKLEŞMEDİ. Hatayı kullanıcıya bildir veya sorunu çözüp tekrar dene. Başarılı diye raporlama."
+                        `ERROR (${tool.name}): ${res.output} | ` +
+                        "NOTE: The tool failed; this operation DID NOT HAPPEN. Report the error to the user or fix it and retry. Do not report success."
                     );
                 } catch (err) {
                     const msg = (err as Error).message;
-                    const out = `HATA (${tool.name}): ${msg} | NOT: Araç hata verdi; işlem gerçekleşmedi. Başarılı diye raporlama.`;
-                    logger.error(`Araç hatasi: ${tool.name}: ${msg}`);
+                    const out = `ERROR (${tool.name}): ${msg} | NOTE: The tool threw an error; the operation did not happen. Do not report success.`;
+                    logger.error(`Tool error: ${tool.name}: ${msg}`);
                     events.onToolResult?.(tool.name, false, msg);
                     return out;
                 }

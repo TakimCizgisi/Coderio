@@ -3,19 +3,19 @@ import type { AgentTool } from "../config/types.js";
 export const taskCompleteTool: AgentTool = {
     name: "task_complete",
     description:
-        "Görev akışını KENDİ kararınla kontrol eder. " +
-        "İşin henüz bitmediyse, kalan adımlara devam etmek için continue:true ile çağır (yeni bir tur açılır). " +
-        "Görev TAMAMLANDIĞINDA ve doğrulandığında continue:false (veya continue vermeden) ile çağır; " +
-        "report parametresine yapılan işlerin özetini yaz.",
+        "Controls the task flow by YOUR own decision. " +
+        "If the work isn't finished yet, call with continue:true to proceed to the remaining steps (a new round starts). " +
+        "When the task is DONE and verified, call with continue:false (or without continue); " +
+        "write a summary of the work done in the report parameter.",
     parameters: {
         type: "object",
         properties: {
-            report: { type: "string", description: "İşin durumu / tamamlanan işlerin kısa özeti" },
+            report: { type: "string", description: "Status of the work / short summary of what was completed" },
             continue: {
                 type: "boolean",
                 description:
-                    "true: göreve devam et, yeni bir tur iste (tur sonunda model tekrar görüşmelere devam eder). " +
-                    "false veya verilmezse: görevi bitir."
+                    "true: continue the task, request a new round (at the end of the round the model continues the conversation). " +
+                    "false or omitted: finish the task."
             }
         },
         required: []
@@ -24,11 +24,11 @@ export const taskCompleteTool: AgentTool = {
         if (ctx.signals) {
             if (params.continue === true) {
                 ctx.signals.continueRequested = true;
-                return { ok: true, output: "Devam turu istendi (continue:true). Model kalan adımına devam edecek." };
+                return { ok: true, output: "Continuation round requested (continue:true). The model will proceed with the remaining steps." };
             }
             ctx.signals.taskCompleted = true;
         }
         const report = (params.report ?? "").trim();
-        return { ok: true, output: report || "Görev tamamlandı." };
+        return { ok: true, output: report || "Task completed." };
     }
 };

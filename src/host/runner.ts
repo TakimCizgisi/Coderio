@@ -1,16 +1,20 @@
 /**
- * Daemon çekirdeği: tek `AjanService`, seri işlem kuyruğu, olay yayını.
+ * Motor çekirdeği: tek `CoderioService`, seri işlem kuyruğu, olay yayını.
  *
  * Model belleği ve bağlam tek örnek üzerinden paylaşılır; bu yüzden modele
  * dokunan istekler (chat, install, use-model, set-config) sıraya girer.
  * Durum okuyan istekler (status, list) kuyruğu atlar.
+ *
+ * Tek dinleyicisi vardır: ana sürece bağlı `MessagePort`. Bu yüzden sohbet
+ * çıktısını "hangi istemciye" göre yönlendirmek gerekmez; tüm olaylar tek
+ * porta gider.
  */
-import { AjanService, type ServiceEvents } from "../service.js";
+import { CoderioService, type ServiceEvents } from "../service.js";
 import type { ChatHistoryItem } from "node-llama-cpp";
 import type { EventFrame, HistoryMessage, StatusReport } from "../protocol/messages.js";
 import { PROTOCOL_VERSION } from "../protocol/messages.js";
 import { buildGpuReport } from "./gpu.js";
-import { AJAN_VERSION } from "../version.js";
+import { CODERIO_VERSION } from "../version.js";
 
 type Listener = (event: EventFrame) => void;
 
@@ -18,15 +22,18 @@ type Listener = (event: EventFrame) => void;
 type ExclusiveTask = () => Promise<void>;
 
 export class Runner {
-    private readonly service: AjanService;
+    private readonly service: CoderioService;
     private readonly listeners = new Set<Listener>();
     private queue: Promise<void> = Promise.resolve();
     private busy = false;
 
+    /** Model ön yükleme durumu (açılışta sıcak tutma). */
+    private loadState: "idle" | "loading" | "ready" = "idle";
+
     /** Sohbet dışı olayların varsayılan yayıncısı (model yükleme, durum) */
     private readonly baseEvents: ServiceEvents;
 
-    /** Ajanın çalışma dizini (durum raporunda döner). */
+    /** Asistanın çalışma dizini (durum raporunda döner). */
     readonly cwd: string;
 
     constructor(cwd: string) {
@@ -39,26 +46,22 @@ export class Runner {
             onStepStart: (step, maxSteps) => this.emit({ event: "step-start", step, maxSteps }),
             onStepEnd: (step) => this.emit({ event: "step-end", step }),
             // `updateEvents` birleştirdiği için sohbet bitince bu geri yüklenmezse
-            // `onError` bir sonraki hatada kapalı socket'e gider. Şimdiden tanımlı olmalı.
+            // `onError` bir sonraki hatada yanlış hedefe gider. Şimdiden tanımlı olmalı.
             onError: (err) => this.emit({ event: "error", message: err.message }),
             onModelLoadProgress: (pct) => this.emit({ event: "load-progress", pct }),
             onModelLoadComplete: () => this.emit({ event: "load-complete" })
         };
         this.baseEvents = events;
-        this.service = new AjanService(events, cwd);
+        this.service = new CoderioService(events, cwd);
     }
 
-    get instance(): AjanService {
+    get instance(): CoderioService {
         return this.service;
     }
 
     subscribe(listener: Listener): () => void {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);
-    }
-
-    get clientCount(): number {
-        return this.listeners.size;
     }
 
     get isBusy(): boolean {
@@ -96,47 +99,50 @@ export class Runner {
     // ── İşlemler ──
 
     /**
-     * Sohbet gönderir. Çıktı akışı yalnızca `target` alıcısına gider: motor
-     * paylaşılan, yanıt akışı değil. `target` verilmezse tüm bağlı istemcilere
-     * yayın yapılır (tek istemcili kullanımda aynı davranış).
+     * Sohbet gönderir. Çıktı akışı tek porta gider: motor paylaşılan, yanıt
+     * akışı değil. Model yükleme ilerlemesi sohbetten bağımsız olduğu için
+     * ayrıca biriktirilmez.
      */
     async sendMessage(
         text: string,
-        modelId?: string,
-        target?: Listener
+        modelId?: string
     ): Promise<{ ok: boolean; response?: string; steps?: number; error?: string }> {
-        return this.exclusive(async () => {
-            // Model yükleme ilerlemesi herkese açık: yükleme motor genelinde
-            // tek seferlik bir olaydır, sohbetten bağımsız.
+        const task = this.exclusive(async () => {
             const chatEvents: ServiceEvents = {
-                onTextChunk: (t) => this.to(target, { event: "text-chunk", text: t }),
-                onThinkingChunk: (t) => this.to(target, { event: "thinking-chunk", text: t }),
-                onToolCall: (name, args) =>
-                    this.to(target, { event: "tool-call", name, args: (args ?? {}) as Record<string, unknown> }),
-                onToolResult: (name, ok, output) => this.to(target, { event: "tool-result", name, ok, output }),
-                onStepStart: (step, maxSteps) => this.to(target, { event: "step-start", step, maxSteps }),
-                onStepEnd: (step) => this.to(target, { event: "step-end", step }),
-                onError: (err) => this.to(target, { event: "error", message: err.message }),
+                onTextChunk: (t) => this.emit({ event: "text-chunk", text: t }),
+                onThinkingChunk: (t) => this.emit({ event: "thinking-chunk", text: t }),
+                onToolCall: (name, args) => this.emit({ event: "tool-call", name, args: (args ?? {}) as Record<string, unknown> }),
+                onToolResult: (name, ok, output) => this.emit({ event: "tool-result", name, ok, output }),
+                onStepStart: (step, maxSteps) => this.emit({ event: "step-start", step, maxSteps }),
+                onStepEnd: (step) => this.emit({ event: "step-end", step }),
+                onError: (err) => this.emit({ event: "error", message: err.message }),
                 onModelLoadProgress: (pct) => this.emit({ event: "load-progress", pct }),
                 onModelLoadComplete: () => this.emit({ event: "load-complete" })
             };
             this.service.updateEvents(chatEvents);
             try {
                 const result = await this.service.sendMessage(text, modelId);
-                if (!result.ok) this.to(target, { event: "error", message: result.error ?? "bilinmeyen hata" });
-                else this.to(target, { event: "complete", response: result.response ?? "", steps: result.steps ?? 0 });
+                if (!result.ok) this.emit({ event: "error", message: result.error ?? "unknown error" });
+                else this.emit({ event: "complete", response: result.response ?? "", steps: result.steps ?? 0 });
                 return result;
             } finally {
-                // Yayını eski hedefe döndür: istek bittiğinde olaylar kalıcı olarak
-                // tek istemciye bağlı kalmasın.
+                // Yayını taban yayına döndür: istek bittiğinde olaylar kalıcı
+                // olarak sohbet tarafına bağlı kalmasın.
                 this.service.updateEvents(this.baseEvents);
             }
         });
-    }
 
-    private to(target: Listener | undefined, event: EventFrame): void {
-        if (target) target(event);
-        else this.emit(event);
+        // Yanıt tamamlanınca arkada duran başlığı üret: `complete` olayını
+        // bekletmez, sıradaki sohbet isteğiyle çakışmaz (kuyruk seridir).
+        void task.then(async () => {
+            try {
+                const title = await this.exclusive(() => this.service.refreshTitle());
+                if (title) this.emit({ event: "session-title", title });
+            } catch {
+                /* başlık isteğe bağlıdır; hata görünmez */
+            }
+        });
+        return task;
     }
 
     setConfig(patch: Record<string, unknown>): Promise<void> {
@@ -163,6 +169,29 @@ export class Runner {
         return this.exclusive(() => this.service.reset());
     }
 
+    /**
+     * Kurulu modeli arka planda hazırlar (açılışta sıcak tutar).
+     *
+     * Kuyruğa girmez: kullanıcı yüklenirken mesaj gönderebilir; iki taraf aynı
+     * paylaşılan oturum promise'ını bekler, çift motor kurulmaz. Model yoksa
+     * sessizce başarısız döner ("installed:false" durumuna bırakır).
+     */
+    async warmUp(): Promise<{ ok: boolean; known: boolean }> {
+        if (this.service.isWarm) {
+            this.loadState = "ready";
+            return { ok: true, known: true };
+        }
+        this.loadState = "loading";
+        try {
+            const result = await this.service.warmUp();
+            this.loadState = this.service.isWarm ? "ready" : "idle";
+            return result;
+        } catch {
+            this.loadState = "idle";
+            return { ok: false, known: true };
+        }
+    }
+
     abort(): void {
         this.service.abort();
     }
@@ -179,7 +208,7 @@ export class Runner {
         return this.service.loadSession(id);
     }
 
-    saveSession(session: Parameters<AjanService["saveSession"]>[0]) {
+    saveSession(session: Parameters<CoderioService["saveSession"]>[0]) {
         return this.service.saveSession(session);
     }
 
@@ -200,18 +229,17 @@ export class Runner {
         const config = this.service.getConfig();
         return {
             protocol: PROTOCOL_VERSION,
-            version: AJAN_VERSION,
+            version: CODERIO_VERSION,
             modelId: config.modelId,
             modelName: model?.name ?? config.modelId,
             installed: model?.installed ?? false,
-            loading: false,
+            loading: this.loadState === "loading",
             busy: this.busy,
             cwd: this.cwd,
             gpu: await buildGpuReport(this.service),
             context: this.service.getContextStats(),
             reasoning: this.service.getReasoningInfo(),
             config,
-            clients: this.clientCount,
             uptimeSec: Math.round(process.uptime())
         };
     }

@@ -1,0 +1,68 @@
+# Coderio paketleme ayarları.
+#
+# Tek çıktı: NSIS kurulum sihirbazı (Coderio Setup.exe). Uygulama npm'e
+# yayımlanmaz; yalnızca bu sihirbaz dağıtılır.
+#
+# `asar: false` seçimi: `node-llama-cpp` ve sağladığı CUDA/Vulkan ikili
+# dosyaları yürütülebilir dosyalardır. `asar` içine sıkıştırıldığında Windows
+# bunları yerinde açamaz ve model yükleme çalışmaz. Node.js runtime zaten
+# Electron içinde gömülüdür; bu yüzden sistemde Node kurulu olması gerekmez.
+
+appId: tr.takimcizgisi.coderio
+productName: Coderio
+copyright: Copyright © 2026 TakımÇizgisi LSH Yazılım Geliştirme Grubu
+
+directories:
+  output: release
+  buildResources: build
+
+asar: false
+compression: normal
+removePackageScripts: true
+
+files:
+  # Derlenmiş uygulama ve model kataloğu.
+  - dist/**/*
+  - config/models.json
+  - package.json
+  # `node-llama-cpp` bundle dışıdır (`external`), bu yüzden üretim
+  # bağımlılıkları paketlenmek zorundadır. electron-builder `files`
+  # verildiğinde varsayılan deseni (`**/*`) tamamen değiştirir; bu satır
+  # olmadan uygulama kurulduktan sonra motoru başlatamaz.
+  - node_modules/**/*
+  # Gereksiz veya yanlış mimari içerikler. `win-x64-cuda-ext` CUDA'nın
+  # genişletilmiş (opsiyonel) ikilisidir; standart `win-x64-cuda` yeterlidir
+  # ve 350 MB tasarruf sağlar. `win-arm64` x64 kurulumda kullanılmaz.
+  - "!**/*.map"
+  - "!**/node_modules/@node-llama-cpp/win-arm64/**"
+  - "!**/node_modules/@node-llama-cpp/win-x64-cuda-ext/**"
+  - "!**/node_modules/**/*.md"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  executableName: Coderio
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Coderio
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  # PATH'e `$INSTDIR` ekler ve `coderio.cmd` shim'ini yazar.
+  include: build/installer.nsh
+  # Model dosyaları GB boyutunda ve kullanıcı verisidir; kurulum sırasında
+  # silinmemelidir.
+  deleteAppDataOnUninstall: false
+
+# Model dosyaları ve `~/.coderio` kurulum paketine girmez.
+publish: null

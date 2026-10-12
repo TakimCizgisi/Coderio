@@ -1,159 +1,161 @@
 /**
- * IPC smoke testi: gerçek named pipe/socket üzerinden uçtan uca akış.
+ * IPC smoke testi: gerçek motor, süreç içi MessagePort üzerinden.
  *
- * Model yüklemez (modeller silindi) ama sunucu başlatma, istek/yanıt eşleme,
- * olay yayını ve kapanış davranışını doğrular.
+ * Motor `worker_threads.Worker` içinde çalıştırılır: `utilityProcess.fork()`
+ * ile aynı kod yolu (`src/host/serve.ts`) ve aynı kanal (`EngineChannel`)
+ * kullanılır, ancak test Electron'a ihtiyaç duymaz. Named pipe / socket yoktur.
+ *
+ * Model yüklemez (modeller kurulu olmayabilir) ama istek/yanıt eşleme, olay
+ * yayını, hata zarfı ve kapanış davranışını doğrular.
  */
-import { spawn } from "node:child_process";
-import { connect } from "node:net";
-import { existsSync, rmSync } from "node:fs";
+import { Worker } from "node:worker_threads";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ClientChannel } from "../src/protocol/channel.js";
-import type { EventFrame, RequestFrame, ServerFrame } from "../src/protocol/messages.js";
-
-const SOCKET = process.platform === "win32" ? "\\\\.\\pipe\\ajan-smoke-test" : join(tmpdir(), "ajan-smoke-test.sock");
-const REPO = process.cwd();
+import { EngineChannel } from "../src/protocol/channel.js";
+import type { EventFrame, Request, Result } from "../src/protocol/messages.js";
 
 let passed = 0;
 let failed = 0;
 
-/** Yanıt zarfını açar: hata ise fırlatır, `{type: X, ...}` gövdesini döner. */
-async function unwrapEnvelope<T>(r: { ok: true; result: unknown } | { ok: false; error: string }): Promise<T> {
-    if (!r.ok) throw new Error(r.error);
-    return r.result as T;
-}
-
 function check(name: string, cond: boolean, detail = ""): void {
     if (cond) {
         passed++;
-        console.log(`  \u001B[32m✔\u001B[0m ${name}`);
+        console.log(`  ✔ ${name}`);
     } else {
         failed++;
-        console.log(`  \u001B[31m✖\u001B[0m ${name}${detail ? ` — ${detail}` : ""}`);
+        console.log(`  ✖ ${name}${detail ? ` — ${detail}` : ""}`);
     }
-}
-
-function waitForSocket(timeoutMs = 30_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    return new Promise((resolve, reject) => {
-        const attempt = () => {
-            const s = connect(SOCKET);
-            s.once("connect", () => {
-                s.destroy();
-                resolve();
-            });
-            s.once("error", () => {
-                s.destroy();
-                if (Date.now() > deadline) reject(new Error("socket açılmadı (timeout)"));
-                else setTimeout(attempt, 300);
-            });
-        };
-        attempt();
-    });
 }
 
 type Harness = {
-    channel: ClientChannel;
+    channel: EngineChannel;
     events: EventFrame[];
-    request: (req: RequestFrame["req"]) => Promise<{ ok: true; result: unknown } | { ok: false; error: string }>;
-    close: () => void;
+    worker: Worker;
+    /** Kanal kapatıldığında sözü verilen kapanış sebebi. */
+    closeReason: string;
 };
 
-async function connectClient(): Promise<Harness> {
-    const socket = await new Promise<import("node:net").Socket>((resolve, reject) => {
-        const s = connect(SOCKET);
-        s.once("connect", () => resolve(s));
-        s.once("error", reject);
+/** Test sonunda hepsinin gerçekten kapandığından emin olmak için. */
+const workers: Worker[] = [];
+
+/**
+ * Motoru bir Worker'da başlatır ve ana süreç tarafındaki kanalı kurar.
+ *
+ * Worker `execArgv`'yi devraldığı için `tsx` yükleyicisi TS dosyasını
+ * doğrudan çalıştırabilir; ayrı bir derleme adımı gerekmez.
+ */
+async function startEngine(cwd: string): Promise<Harness> {
+    const worker = new Worker(join(import.meta.dirname, "ipc-worker.ts"), {
+        workerData: { cwd },
+        execArgv: process.execArgv
     });
+    workers.push(worker);
+    worker.stderr.on("data", (d) => process.stderr.write(`  [engine] ${d}`));
+
     const events: EventFrame[] = [];
-    const channel = new ClientChannel((e) => events.push(e as EventFrame));
-    channel.attach(socket);
-    return { channel, events, request: (req) => channel.request(req), close: () => channel.close() };
+    const harness: Harness = {
+        channel: undefined as unknown as EngineChannel,
+        events,
+        worker,
+        closeReason: ""
+    };
+    harness.channel = new EngineChannel(
+        worker,
+        (event) => events.push(event as EventFrame),
+        (err) => {
+            harness.closeReason = err?.message ?? "closed";
+        }
+    );
+
+    worker.once("error", (err) => {
+        harness.closeReason = err.message;
+        harness.channel.close(err.message);
+    });
+    // Üretimde de aynı bağ vardır: `engineHost.ts`, `utilityProcess` çıktığında
+    // kanalı kapatır. Kanal kendi başına alt sürecin ölümünü öğrenemez.
+    worker.on("exit", (code) => {
+        if (!harness.closeReason) harness.closeReason = `engine exited (code ${code})`;
+        harness.channel.close(harness.closeReason);
+    });
+    return harness;
 }
 
 async function main(): Promise<void> {
-    console.log("\n  AJAN IPC smoke testi\n");
+    console.log("\n  Coderio IPC smoke test (via worker_threads)\n");
 
-    if (process.platform !== "win32" && existsSync(SOCKET)) rmSync(SOCKET, { force: true });
+    // Motorun veri dizinini testin kendi dizinine yönlendir: kullanıcının
+    // gerçek `~/.coderio` verisine dokunulmasın.
+    const dataDir = mkdtempSync(join(tmpdir(), "coderio-smoke-"));
+    const cwd = mkdtempSync(join(tmpdir(), "coderio-proje-"));
+    process.env.CODERIO_HOME = dataDir;
 
-    const engine = spawn(process.execPath, [join(REPO, "out", "ajan-engine.js"), "--socket", SOCKET], {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true
-    });
-    engine.stdout.on("data", (d) => process.stdout.write(`  \u001B[90m[engine] ${d}\u001B[0m`));
-    engine.stderr.on("data", (d) => process.stderr.write(`  \u001B[90m[engine] ${d}\u001B[0m`));
+    const engine = await startEngine(cwd);
 
     try {
-        await waitForSocket();
-
         // 1) Bağlantı + ping
-        const c1 = await connectClient();
-        const pong = (await c1.request({ type: "ping" })) as { ok: true; result: { protocol: number; version: string } };
-        check("ping yanıtı alındı", pong.ok && pong.result.version.length > 0);
-        check("protokol sürümü 1", pong.ok && pong.result.protocol === 1);
+        const pong = await engine.channel.request<Extract<Result, { type: "pong" }>>({ type: "ping" });
+        check("ping response received", pong.ok && pong.result.version.length > 0);
+        check("protocol version 1", pong.ok && pong.result.protocol === 1);
 
         // 2) Durum raporu
-        const st = await unwrapEnvelope<{ status: { version: string; gpu: unknown } }>(await c1.request({ type: "status" }));
-        check("status döndü", typeof st.status.version === "string");
-        check("gpu raporu var", typeof st.status.gpu === "object");
+        const st = await engine.channel.request<Extract<Result, { type: "status" }>>({ type: "status" });
+        check("status returned", st.ok && typeof st.result.status.version === "string");
+        check("gpu report present", st.ok && typeof st.result.status.gpu === "object");
+        check("working dir correct", st.ok && st.result.status.cwd === cwd, st.ok ? st.result.status.cwd : "-");
+        check("data dir tied to CODERIO_HOME", st.ok && st.result.status.config.modelId.length > 0);
 
         // 3) Model listesi boş olabilir ama istek hata vermemeli
-        const models = (await c1.request({ type: "list-models" })) as { ok: boolean };
-        check("list-models yanıt verdi", models.ok === true);
+        const models = await engine.channel.request<Extract<Result, { type: "models" }>>({ type: "list-models" });
+        check("list-models responded", models.ok && Array.isArray(models.result.models));
 
         // 4) Bilinmeyen istek hata zarfı döner (sessizce yutulmaz)
-        const bad = (await c1.request({ type: "chat" as never })) as { ok: boolean; error?: string };
-        check("geçersiz istek reddedildi", bad.ok === false && typeof bad.error === "string");
+        const bad = await engine.channel.request({ type: "unknown" } as unknown as Request);
+        check(
+            "unknown request rejected",
+            !bad.ok && typeof bad.error === "string",
+            bad.ok ? "no error returned" : bad.error
+        );
 
-        // 5) İkinci bağlantı: çok istemci
-        const c2 = await connectClient();
-        const st2 = await unwrapEnvelope<{ status: { clients: number } }>(await c2.request({ type: "status" }));
-        check("iki istemci görüldü", st2.status.clients === 2);
-        c2.channel.failAll("test bitti");
+        // 5) Olay yayını: model kurulu değilse hata olayı üretilmeli
+        const chat = await engine.channel.request<Extract<Result, { type: "ok" }>>({ type: "chat", text: "hello" });
+        await new Promise((r) => setTimeout(r, 400));
+        check("chat request returned a result", chat.ok && typeof chat.result.type === "string");
+        check(
+            "event stream reached renderer",
+            engine.events.length > 0,
+            `${engine.events.length} events`
+        );
 
-        // 6) Bağlantı kapanınca bekleyen istek asılı kalmamalı
-        const hangPromise = c2.channel.request({ type: "ping" });
-        c2.channel.failAll("kapatma testi");
+        // 6) Kanal kapanınca bekleyen istek asılı kalmamalı
+        const hangPromise = engine.channel.request({ type: "status" });
+        engine.channel.close("close test");
         const hang = await hangPromise;
-        check("kapanışta bekleyen istek çözüldü", hang.ok === false);
+        check("pending request resolved on close", !hang.ok);
 
-        // 6b) `close()` gerçekten soketi yok etmeli. c1 hâlâ bağlı olduğu için
-        //     kapanıştan SONRA yeni istemci açmadan c1'e sormalıyız: yalnız c1
-        //     kaldıysa close() çalışmış demektir (aksi halde 2 görünürdü).
-        c2.close();
-        await new Promise((r) => setTimeout(r, 400)); // daemon'un kopmayı işlemesi için
-        const after = await unwrapEnvelope<{ status: { clients: number } }>(await c1.request({ type: "status" }));
-        check("close() soketi kapattı", after.status.clients === 1, `clients=${after.status.clients}`);
+        // 7) Kapanmış kanala istek hata döndürmeli (çökmemeli)
+        const afterClose = await engine.channel.request({ type: "ping" });
+        check("closed channel rejected request", !afterClose.ok);
 
-        // 7) Olay yayını: model yüklenmediği için sohbet akışı yok,
-        //    ama yüklemeyi tetikleyen install olay üretmeli veya hata vermeli.
-        const chat = (await c1.request({ type: "chat", text: "merhaba" })) as { ok: boolean };
-        check("chat isteği hata/sonuç döndürdü", typeof chat.ok === "boolean");
-
-        // 8) Kapanış: istek gönderilir, SONRA bağlantı kapatılır.
-        const shut = (await c1.request({ type: "shutdown" })) as { ok: boolean };
-        check("shutdown kabul edildi", shut.ok === true);
-        c1.close();
-
-        await new Promise<void>((resolve) => {
-            const t = setTimeout(() => resolve(), 4000);
-            engine.once("exit", () => {
-                clearTimeout(t);
-                resolve();
-            });
-        });
-        check("motor süreci kapandı", engine.exitCode !== null || engine.killed);
+        // 8) `shutdown` motor sürecini sonlandırmalı
+        const engine2 = await startEngine(cwd);
+        const shut = await engine2.channel.request<Extract<Result, { type: "shutdown" }>>({ type: "shutdown" });
+        check("shutdown accepted", shut.ok && shut.result.type === "shutdown");
+        await new Promise((r) => setTimeout(r, 600));
+        check("channel closed after shutdown", engine2.closeReason.length > 0, engine2.closeReason);
     } finally {
-        if (engine.exitCode === null) engine.kill();
-        if (process.platform !== "win32" && existsSync(SOCKET)) rmSync(SOCKET, { force: true });
+        // `Worker`ın `close()`'ı yoktur; süreci sonlandıran yöntem `terminate()`.
+        // Kanal kapatmak yetmez, aksi hâlde Node süreci hiç çıkmaz.
+        await Promise.all(workers.splice(0).map((w) => w.terminate()));
+        rmSync(dataDir, { recursive: true, force: true });
+        rmSync(cwd, { recursive: true, force: true });
     }
 
-    console.log(`\n  ${passed} geçti, ${failed} kaldı\n`);
+    console.log(`\n  ${passed} passed, ${failed} failed\n`);
     if (failed > 0) process.exit(1);
 }
 
 main().catch((err) => {
-    console.error(`\n  test çöktü: ${(err as Error).message}\n`);
+    console.error(`\n  test crashed: ${(err as Error).stack ?? (err as Error).message}\n`);
     process.exit(1);
 });

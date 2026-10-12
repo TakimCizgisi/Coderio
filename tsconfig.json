@@ -24,8 +24,11 @@
     ],
     "exclude": [
         "node_modules",
+        "dist",
         "out",
         "media",
-        "vsix"
+        "vsix",
+        "UI",
+        "src/renderer"
     ]
 }

@@ -1,15 +1,16 @@
 /**
- * AJAN IPC protokolü — sözleşmenin tek kaynağı.
+ * Coderio IPC protokolü — sözleşmenin tek kaynağı.
  *
- * Hem daemon (`src/daemon`) hem istemci (`src/client`) buradan içe aktarır.
+ * Hem ana süreç (`src/main`) hem motor (`src/host`) buradan içe aktarır.
  * Bu dosya çalışma zamanında hiçbir şey yapmaz: yalnızca tipler ve iki küçük
  * doğrulayıcı. Böylece iki taraf aynı sözleşmeyi görmeye zorlanır.
  *
- * Çerçeveleme: JSON Lines. Her mesaj tek satırlık geçerli JSON'dur; akış
- * (token) olayları bu yüzden satır ayrımıyla taşınabilir.
+ * Çerçeveleme: yok. Mesajlar süreç içi `MessagePort` üzerinden yapısal
+ * klonlanarak taşınır, bu yüzden token (stream) olayları için özel bir
+ * satır ayrımı gerekmez.
  */
 import type { StoredSession } from "../utils/sessions.js";
-import type { AjanConfig, ModelDefinition, ReasoningMode } from "../config/types.js";
+import type { CoderioConfig, ModelDefinition, ReasoningMode } from "../config/types.js";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -38,7 +39,19 @@ export type RequestType = Request["type"];
 
 // ── Yanıtlar ──
 
-export type ModelEntry = ModelDefinition & { path: string; installed: boolean; active: boolean };
+/**
+ * Model listesi girdisi.
+ *
+ * Katalog tanımı `model` altında sarılıdır; `path`/`installed`/`active`
+ * diskin gerçek durumudur. `CoderioService.listModels()` ile birebir aynı
+ * şekildir, böylece motor tarafında dönüşüm maliyeti yoktur.
+ */
+export type ModelEntry = {
+    model: ModelDefinition;
+    path: string;
+    installed: boolean;
+    active: boolean;
+};
 export type SessionSummary = { id: string; title: string; updatedAt: string };
 
 export type GpuReport = {
@@ -66,28 +79,26 @@ export type StatusReport = {
     installed: boolean;
     loading: boolean;
     busy: boolean;
-    /** Ajanın çalışma dizini */
+    /** Asistanın çalışma dizini */
     cwd: string;
     gpu: GpuReport;
     context: { usedTokens: number; contextSize: number } | null;
     reasoning: { mode: ReasoningMode; enabled: boolean } | null;
-    config: AjanConfig;
-    /** Bağlı istemci sayısı */
-    clients: number;
+    config: CoderioConfig;
     uptimeSec: number;
 };
 
 export type Result =
     | { type: "pong"; protocol: number; version: string }
     | { type: "status"; status: StatusReport }
-    | { type: "config"; config: AjanConfig }
+    | { type: "config"; config: CoderioConfig }
     | { type: "models"; models: ModelEntry[]; error?: string }
     | { type: "model"; id: string; ok: boolean; error?: string }
     | { type: "models-refreshed"; ok: boolean; count: number; error?: string }
     | { type: "history"; messages: HistoryMessage[] }
     | { type: "sessions"; sessions: SessionSummary[] }
     | { type: "session"; session: StoredSession | null; ok: boolean; error?: string }
-    | { type: "ok" }
+    | { type: "ok"; error?: string }
     | { type: "shutdown"; ok: true };
 
 export type HistoryMessage = { kind: "user" | "assistant" | "thought" | "tool"; text: string; name?: string };
@@ -110,7 +121,8 @@ export type EventFrame =
     | { event: "tool-result"; name: string; ok: boolean; output: string }
     | { event: "complete"; response: string; steps: number }
     | { event: "error"; message: string }
-    | { event: "log"; level: "debug" | "info" | "warn" | "error"; message: string };
+    | { event: "log"; level: "debug" | "info" | "warn" | "error"; message: string }
+    | { event: "session-title"; title: string };
 
 export type EventName = EventFrame["event"];
 

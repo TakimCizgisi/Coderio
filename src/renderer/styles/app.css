@@ -1,0 +1,1366 @@
+/* Coderio arayüz teması.
+ *
+ * Kaynak: `UI/İNDEX.HTML` prototipi. Palet, ölçüler ve animasyonlar birebir
+ * korunur; tüm kenarlar köşesizdir (`border-radius: 0`), çünkü prototipte öyle.
+ *
+ * Fontlar `dist/renderer` altına kopyalanır (bkz. `esbuild.mjs`): uygulama
+ * çevrimdışıdır ve CSP `font-src 'self'` ile yalnızca aynı kökten yüklemeye izin
+ * verir. */
+
+@font-face {
+    font-family: "OzelFont";
+    src: url("font.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}
+
+@font-face {
+    font-family: "Material Symbols Outlined";
+    src: url("MaterialSymbolsOutlined.woff2") format("woff2");
+    /* Material Symbols değişken fonttur: FILL/GRAD/opsz eksenleri vardır. */
+    font-weight: 100 700;
+    font-style: normal;
+    /* `block` yerine `block` şart: ilk çizimde ikon metni görünmesin. */
+    font-display: block;
+}
+
+:root {
+    --bg: #121212;
+    --bg-raised: #1e1e1e;
+    --bg-hover: #2a2a2a;
+    --bg-box: #252525;
+    --border: #333333;
+    --border-strong: #555555;
+    --border-inner: #353535;
+    --text: #ffffff;
+    --text-soft: #cccccc;
+    --text-dim: #888888;
+    --danger: #ff5555;
+    --font: "OzelFont", Arial, sans-serif;
+    --ease: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    overflow: hidden;
+}
+
+/* Material Symbols: metin, ligatur olarak ikon glifine çevrilir. */
+.material-symbols-outlined {
+    font-family: "Material Symbols Outlined";
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+}
+
+/* ── Ekran düzeni ── */
+
+.screen {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.home {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+    padding: 24px 15px;
+}
+
+/* ── Sohbet düzeni (ilk mesaj sonrası) ── */
+
+.screen.is-chat .home {
+    justify-content: flex-start;
+    overflow: hidden;
+    padding: 10px 15px 16px;
+    gap: 8px;
+}
+
+.chat-area {
+    display: none;
+    width: 100%;
+    max-width: 860px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.screen.is-chat .chat-area {
+    display: block;
+}
+
+.screen.is-chat .ai-prompt-container {
+    max-width: 860px;
+    margin-top: auto;
+    padding-bottom: 2px;
+}
+
+.screen.is-chat .logo-container {
+    display: none;
+}
+
+/* ── Geçici bildirimler (sağ alt; prompt kutusu görünümü) ── */
+
+.toasts {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 320px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 220px;
+    max-width: 320px;
+    padding: 10px 14px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text);
+    pointer-events: auto;
+    animation: toast-in 0.18s var(--ease);
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.toast.is-leaving {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+}
+
+.toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.toast-icon .material-symbols-outlined {
+    font-size: 15px;
+}
+
+.toast.is-info .toast-icon {
+    color: #58a6ff;
+}
+
+.toast.is-success .toast-icon {
+    color: #7ee787;
+}
+
+.toast.is-warning .toast-icon {
+    color: #d29922;
+}
+
+.toast.is-error .toast-icon {
+    color: #f85149;
+}
+
+.toast.is-warning .toast-msg {
+    color: #e3b341;
+}
+
+.toast.is-error .toast-msg {
+    color: #ffa198;
+}
+
+/* ── Özel başlık çubuğu ── */
+
+.winbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 34px;
+    padding-left: 12px;
+    background: var(--bg);
+    /* Pencere bu bölgeden sürüklenir. */
+    -webkit-app-region: drag;
+    user-select: none;
+}
+
+.winbar-title {
+    font-size: 12px;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.winbar-controls {
+    display: flex;
+    align-items: stretch;
+    height: 100%;
+    -webkit-app-region: no-drag;
+}
+
+.winbar-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    background: transparent;
+    border: 0;
+    color: var(--text-soft);
+    cursor: pointer;
+}
+
+.winbar-button:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.winbar-close:hover {
+    background: var(--danger);
+    color: var(--text);
+}
+
+.winbar-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 10px;
+    height: 10px;
+}
+
+.winbar-stroke {
+    width: 10px;
+    height: 10px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1;
+}
+
+/* Maksimumdayken "büyüt" yerine "geri al" gösterilir. Kapsam yalnızca
+   `winbar-max` düğmesiyle sınırlıdır: aksi hâlde minimize düğmesinin de
+   `nth-child(1)` ikonu eşleşir ve kaybolur. */
+.winbar-max .winbar-glyph:nth-child(2) {
+    display: none;
+}
+
+.winbar.is-maximized .winbar-max .winbar-glyph:nth-child(1) {
+    display: none;
+}
+
+.winbar.is-maximized .winbar-max .winbar-glyph:nth-child(2) {
+    display: flex;
+}
+
+/* ── Logo ── */
+
+.logo-container {
+    margin-bottom: 25px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-image {
+    width: 300px;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+/* ── Prompt kutusu ── */
+
+.ai-prompt-container {
+    width: 100%;
+    max-width: 700px;
+    padding: 0 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.prompt-box {
+    width: 100%;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    position: relative;
+    transition: height 0.25s var(--ease);
+}
+
+.prompt-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+    resize: none;
+    height: 24px;
+    max-height: 150px;
+    overflow-y: hidden;
+    transition: height 0.2s var(--ease);
+}
+
+.prompt-input::placeholder {
+    color: var(--text-dim);
+    font-family: inherit;
+}
+
+.prompt-input::-webkit-scrollbar {
+    width: 6px;
+}
+
+.prompt-input::-webkit-scrollbar-track {
+    background: var(--bg-raised);
+}
+
+.prompt-input::-webkit-scrollbar-thumb {
+    background: #444444;
+}
+
+.prompt-input::-webkit-scrollbar-thumb:hover {
+    background: #666666;
+}
+
+/* ── Alt araç çubuğu ── */
+
+.prompt-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.menu-button,
+.project-trigger-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    outline: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 34px;
+    padding: 0 10px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: color 0.2s, border-color 0.2s;
+    gap: 6px;
+}
+
+.menu-button:hover,
+.project-trigger-btn:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.menu-button .material-symbols-outlined,
+.project-trigger-btn .material-symbols-outlined {
+    font-size: 16px;
+}
+
+.project-label {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.prompt-button {
+    background: var(--text);
+    border: none;
+    outline: none;
+    width: 34px;
+    height: 34px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+.prompt-button:hover {
+    background: #e0e0e0;
+}
+
+.prompt-button.is-busy {
+    background: #da3633;
+}
+
+.prompt-button.is-busy:hover {
+    background: #cc2c29;
+}
+
+/* Model yüklenirken gönderim kilitli: buton soluk, tıklanmaz. */
+.prompt-button.is-disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.prompt-button.is-disabled:hover {
+    background: var(--text);
+}
+
+.prompt-button.is-disabled svg {
+    fill: var(--bg);
+}
+
+.prompt-button.is-busy .material-symbols-outlined {
+    font-size: 13px;
+}
+
+.prompt-button svg {
+    fill: var(--bg);
+    width: 13px;
+    height: 13px;
+}
+
+/* ── Açılır menü ── */
+
+.dd-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+}
+
+/* Menü genişlikleri buradan gelir: `style` özniteliği CSP tarafından bloklanır. */
+.dd-menu .dropdown-menu {
+    width: 190px;
+}
+
+.dd-project .dropdown-menu {
+    width: 200px;
+}
+
+.dd-wrapper.is-open .dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.dropdown-item {
+    padding: 8px 12px;
+    background: none;
+    border: 0;
+    color: var(--text-soft);
+    font-size: 13px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.dropdown-item:disabled {
+    color: #5e5e5e;
+    cursor: default;
+}
+
+/* Chat düzeninde .home taşmasını gizlediği için menü altına sığmazsa yukarı açılır. */
+.dd-wrapper.is-above .dropdown-menu {
+    top: auto;
+    bottom: calc(100% + 6px);
+    margin-top: 0;
+    transform: translateY(4px);
+}
+
+.dd-wrapper.is-above.is-open .dropdown-menu {
+    transform: translateY(0);
+}
+
+/* ── Sohbet kaydı ── */
+
+.chat-log {
+    height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 16px 4px 4px;
+}
+
+.chat-log::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-log::-webkit-scrollbar-thumb {
+    background: #444444;
+}
+
+.msg {
+    display: flex;
+    width: 100%;
+}
+
+.msg-row {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+}
+
+.bubble-col {
+    min-width: 0;
+    max-width: min(85%, 720px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.bubble {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.bubble-user {
+    background: #1a2737;
+    border-color: #2b3f55;
+}
+
+.bubble-ai {
+    background: var(--bg-raised);
+}
+
+.msg-typing {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: blink 1.2s infinite;
+}
+
+.dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+.msg-status {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg-box);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 9px;
+}
+
+.msg-status[hidden] {
+    display: none;
+}
+
+.msg-error {
+    color: var(--danger);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* ── Düşünme (SVG Thinking) ── */
+
+.thinking-wrap {
+    border-left: 2px solid var(--border-strong);
+    padding-left: 10px;
+}
+
+.thinking-head {
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 2px 0;
+    transition: color 0.2s;
+}
+
+.thinking-head:hover {
+    color: var(--text);
+}
+
+.thinking-spinner {
+    width: 14px;
+    height: 14px;
+    color: #4c8dff;
+    animation: spin 1.1s linear infinite;
+}
+
+.thinking-spinner circle {
+    stroke: currentColor;
+    stroke-width: 2.5;
+    stroke-dasharray: 28 28;
+    stroke-linecap: round;
+    fill: none;
+}
+
+.thinking-check {
+    width: 14px;
+    height: 14px;
+    color: #3fb950;
+    flex: none;
+}
+
+.thinking-check path {
+    stroke: currentColor;
+}
+
+/* Düşünme bitti ("Thought" çipi): vurgu sönük, kenarlık yeşile döner. */
+.thinking-wrap.thinking-done {
+    border-left-color: #3fb950;
+}
+
+.thinking-wrap.thinking-done .thinking-head {
+    color: var(--text-soft);
+}
+
+.thinking-wrap.thinking-done .thinking-head:hover {
+    color: var(--text);
+}
+
+.thinking-text {
+    display: none;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    color: var(--text-soft);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    max-height: 220px;
+    overflow-y: auto;
+    padding-top: 6px;
+}
+
+.thinking-wrap.is-open .thinking-text {
+    display: block;
+}
+
+/* ── Araç çipleri (Using Tool) ── */
+
+.tool-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tool-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-soft);
+    border: 1px solid var(--border);
+    background: var(--bg-box);
+    padding: 4px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    max-width: 420px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.tool-chip:hover {
+    border-color: var(--border-strong);
+}
+
+.tool-chip[data-state="running"] {
+    border-color: #4c8dff;
+    color: #88c0ff;
+    animation: tool-pulse 1.6s ease-in-out infinite;
+}
+
+.tool-chip[data-state="ok"] {
+    border-color: #3fb950;
+    color: #7ee787;
+}
+
+.tool-chip[data-state="fail"] {
+    border-color: #da3633;
+    color: var(--danger);
+}
+
+/* Durum ikonu: çalışırken küçük halka, bitince ✓/✗ rozeti. */
+.tool-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.tool-chip-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(76, 141, 255, 0.3);
+    border-top-color: #4c8dff;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+}
+
+.tool-chip[data-state="ok"] .tool-chip-mark {
+    color: #3fb950;
+}
+
+.tool-chip[data-state="fail"] .tool-chip-mark {
+    color: var(--danger);
+}
+
+.tool-chip-name,
+.tool-chip-args {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tool-chip-name {
+    color: inherit;
+}
+
+.tool-chip-args {
+    color: var(--text-dim);
+    max-width: 240px;
+}
+
+.tool-result {
+    display: none;
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.tool-chip.is-open .tool-result {
+    display: block;
+}
+
+@keyframes tool-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(76, 141, 255, 0.18);
+    }
+    50% {
+        box-shadow: 0 0 0 5px rgba(76, 141, 255, 0);
+    }
+}
+
+/* ── Animasyonlar ── */
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes blink {
+    0%,
+    80%,
+    100% {
+        opacity: 0.25;
+    }
+    40% {
+        opacity: 1;
+    }
+}
+
+/* ── Ayarlar penceresi (overlay) ── */
+
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings-overlay[hidden] {
+    display: none;
+}
+
+.settings-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+}
+
+.settings-panel {
+    position: relative;
+    width: min(760px, calc(100vw - 48px));
+    max-height: min(640px, calc(100vh - 48px));
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+}
+
+.settings-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-title {
+    font-size: 15px;
+}
+
+.settings-close {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.settings-close:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.settings-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    outline: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.settings-tab.is-active {
+    color: var(--text);
+    background: var(--bg-hover);
+}
+
+.settings-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px;
+}
+
+.settings-view {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settings-view[hidden] {
+    display: none;
+}
+
+.settings-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-dim);
+}
+
+.settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-box);
+    border: 1px solid var(--border);
+}
+
+.settings-item-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.settings-item-name {
+    color: var(--text);
+}
+
+.settings-item-meta {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.settings-item-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.settings-badge {
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border: 1px solid var(--border-strong);
+    color: var(--text-dim);
+}
+
+.settings-badge-active {
+    color: #7ee787;
+    border-color: #3fb950;
+}
+
+.settings-badge-installed {
+    color: #79c0ff;
+    border-color: #58a6ff;
+}
+
+.settings-item-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.settings-action {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    outline: none;
+    color: var(--text-soft);
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.settings-action:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--text);
+    background: var(--bg-hover);
+}
+
+.settings-action:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.settings-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.settings-note {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.settings-note-error {
+    color: var(--danger);
+}
+
+.settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-field-label {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.settings-field input[type="text"],
+.settings-field select,
+.settings-blocked {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 9px;
+    outline: none;
+}
+
+.settings-field input[type="text"]:focus,
+.settings-field select:focus,
+.settings-blocked:focus {
+    border-color: var(--border-strong);
+}
+
+.settings-field input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #7ee787;
+}
+
+.settings-blocked {
+    resize: vertical;
+    min-height: 54px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.settings-apply {
+    color: var(--text);
+    background: var(--bg-hover);
+}
+
+.settings-about-line {
+    color: var(--text-soft);
+    font-size: 13px;
+}
+
+/* ── Sohbet üst çubuğu: model + bağlam göstergesi ── */
+
+.chat-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+}
+
+.chat-header span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-model {
+    color: var(--text-soft);
+}
+
+.chat-context {
+    color: var(--text-dim);
+}
+
+/* ── Menü paneli (hamburger karşılığı) ── */
+
+.menu-overlay,
+.history-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.menu-overlay[hidden],
+.history-overlay[hidden] {
+    display: none;
+}
+
+.menu-panel {
+    position: relative;
+    width: min(360px, calc(100vw - 48px));
+    max-height: min(520px, calc(100vh - 48px));
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.history-panel {
+    width: min(520px, calc(100vw - 48px));
+}
+
+.menu-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.menu-item {
+    display: block;
+    width: 100%;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-soft);
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    padding: 11px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.menu-item:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+}
+
+.menu-item:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ── Geçmiş paneli ── */
+
+.history-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.history-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 9px;
+    outline: none;
+}
+
+.history-search:focus {
+    border-color: var(--border-strong);
+}
+
+.history-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.history-list .settings-item {
+    margin-bottom: 8px;
+}
+
+/* ── Markdown (sohbet balonunun yanıtı) ── */
+
+.bubble-ai .md-p,
+.bubble-ai .md-h1,
+.bubble-ai .md-h2,
+.bubble-ai .md-h3,
+.bubble-ai .md-ul,
+.bubble-ai .md-ol,
+.bubble-ai .md-li,
+.bubble-ai .md-code {
+    white-space: normal;
+}
+
+.bubble-ai .md-p + .md-p {
+    margin-top: 8px;
+}
+
+.bubble-ai .md-h1,
+.bubble-ai .md-h2,
+.bubble-ai .md-h3 {
+    margin: 12px 0 6px;
+    line-height: 1.3;
+}
+
+.bubble-ai .md-h1 {
+    font-size: 16px;
+}
+
+.bubble-ai .md-h2 {
+    font-size: 14px;
+}
+
+.bubble-ai .md-h3 {
+    font-size: 13px;
+}
+
+.bubble-ai .md-ul,
+.bubble-ai .md-ol {
+    margin: 6px 0;
+    padding-left: 20px;
+}
+
+.bubble-ai .md-li {
+    margin: 2px 0;
+}
+
+.bubble-ai code {
+    background: var(--bg-box);
+    border: 1px solid var(--border-inner);
+    padding: 1px 4px;
+    font-size: 12px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.bubble-ai strong {
+    font-weight: 700;
+    color: var(--text);
+}
+
+.bubble-ai em {
+    font-style: italic;
+    color: var(--text-soft);
+}
+
+.md-code-wrap {
+    margin: 8px 0;
+    border: 1px solid var(--border);
+}
+
+.md-code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    background: var(--bg-box);
+    border-bottom: 1px solid var(--border);
+}
+
+.md-code-lang {
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.md-copy {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.md-copy:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.md-code {
+    overflow-x: auto;
+    background: var(--bg-box);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}

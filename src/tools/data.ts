@@ -9,34 +9,34 @@ function describeStructure(value: unknown, depth = 0): string {
     if (depth > 2) return typeof value;
     if (Array.isArray(value)) {
         const sample = value.slice(0, 3).map((v) => describeStructure(v, depth + 1));
-        return `dizi[${value.length}]<${sample.join(", ")}${value.length > 3 ? ", …" : ""}>`;
+        return `array[${value.length}]<${sample.join(", ")}${value.length > 3 ? ", …" : ""}>`;
     }
     if (value && typeof value === "object") {
         const keys = Object.keys(value as Record<string, unknown>);
         const shown = keys.slice(0, 12).map((k) => `${k}: ${describeStructure((value as Record<string, unknown>)[k], depth + 1)}`);
-        return `nesne{${keys.length}}{ ${shown.join(", ")}${keys.length > 12 ? ", …" : ""} }`;
+        return `object{${keys.length}}{ ${shown.join(", ")}${keys.length > 12 ? ", …" : ""} }`;
     }
-    if (typeof value === "string") return `metin(${value.length})`;
+    if (typeof value === "string") return `string(${value.length})`;
     return String(value);
 }
 
 export const readDataTool: AgentTool = {
     name: "read_data",
     description:
-        "JSON veya YAML dosyasını ayrıştırıp özetini ve yapısını döner. Yapılandırma dosyalarını incelemek için idealdir.",
+        "Parses a JSON or YAML file and returns its summary and structure. Ideal for inspecting configuration files.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "JSON/YAML dosya yolu" }
+            path: { type: "string", description: "JSON/YAML file path" }
         },
         required: ["path"]
     },
     handler: async (params: { path?: string }, ctx) => {
         const p = params.path?.trim();
-        if (!p) return { ok: false, output: "path zorunludur." };
+        if (!p) return { ok: false, output: "path is required." };
         const filePath = resolveUserPath(ctx.cwd, p);
-        if (!existsSync(filePath)) return { ok: false, output: `Dosya bulunamadı: ${p}` };
-        if (!statSync(filePath).isFile()) return { ok: false, output: `Bu bir dosya değil: ${p}` };
+        if (!existsSync(filePath)) return { ok: false, output: `File not found: ${p}` };
+        if (!statSync(filePath).isFile()) return { ok: false, output: `Not a file: ${p}` };
         const ext = extname(filePath).toLowerCase();
         let data: unknown;
         try {
@@ -53,30 +53,30 @@ export const readDataTool: AgentTool = {
                 }
             }
         } catch (err) {
-            return { ok: false, output: `Ayrıştırma hatası: ${(err as Error).message}` };
+            return { ok: false, output: `Parse error: ${(err as Error).message}` };
         }
         const pretty = JSON.stringify(data, null, 2);
-        const summary = `Dosya: ${filePath}\nYapı: ${describeStructure(data)}\n\n${pretty}`;
+        const summary = `File: ${filePath}\nStructure: ${describeStructure(data)}\n\n${pretty}`;
         return { ok: true, output: limitOutput(summary, Math.min(ctx.config.maxToolOutput ?? 40_000, 20_000)) };
     }
 };
 
 export const unzipFileTool: AgentTool = {
     name: "unzip_file",
-    description: "ZIP arşivini hedef klasöre açar. Hedef verilmezse zip'in yanına açılır.",
+    description: "Extracts a ZIP archive into a target folder. If no target is given, extracts next to the zip.",
     parameters: {
         type: "object",
         properties: {
-            path: { type: "string", description: "ZIP dosyası yolu" },
-            destination: { type: "string", description: "Hedef klasör (opsiyonel)" }
+            path: { type: "string", description: "ZIP file path" },
+            destination: { type: "string", description: "Target folder (optional)" }
         },
         required: ["path"]
     },
     handler: async (params: { path?: string; destination?: string }, ctx) => {
         const p = params.path?.trim();
-        if (!p) return { ok: false, output: "path zorunludur." };
+        if (!p) return { ok: false, output: "path is required." };
         const zipPath = resolveUserPath(ctx.cwd, p);
-        if (!existsSync(zipPath)) return { ok: false, output: `Dosya bulunamadı: ${p}` };
+        if (!existsSync(zipPath)) return { ok: false, output: `File not found: ${p}` };
         let destDir: string;
         if (params.destination?.trim()) {
             destDir = resolveUserPath(ctx.cwd, params.destination.trim());
@@ -92,10 +92,10 @@ export const unzipFileTool: AgentTool = {
                 .filter((e) => !e.isDirectory)
                 .slice(0, 30)
                 .map((e) => e.entryName);
-            const more = entries.length > 30 ? `\n… ve ${entries.length - 30} dosya daha` : "";
-            return { ok: true, output: `${entries.length} girdi açıldı → ${destDir}\n${names.join("\n")}${more}` };
+            const more = entries.length > 30 ? `\n… and ${entries.length - 30} more files` : "";
+            return { ok: true, output: `${entries.length} entries extracted → ${destDir}\n${names.join("\n")}${more}` };
         } catch (err) {
-            return { ok: false, output: `Açma başarısız: ${(err as Error).message}` };
+            return { ok: false, output: `Extraction failed: ${(err as Error).message}` };
         }
     }
 };
