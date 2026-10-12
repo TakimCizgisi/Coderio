@@ -142,13 +142,42 @@ sonrasında tamamen çevrimdışı çalışır).
 # yalnızca klasöre paketle (hızlı)
 npm run pack
 
-# NSIS kurulum sihirbazı üret: Coderio-<sürüm>-x64-setup.exe
+# Windows NSIS kurulum sihirbazı: Coderio-<sürüm>-x64-setup.exe
+npx electron-builder --win nsis --x64
+
+# Linux (AppImage + deb): Coderio-<sürüm>-x64.AppImage / .deb
+npx electron-builder --linux AppImage deb --x64
+
+# ikisi birden
 npm run dist
 ```
 
-Çıktı `release/` altına yazılır. Kurulum sihirbazı `PATH`'e `$INSTDIR` ekler ve
-`coderio.cmd` kısayolunu oluşturur. Model dosyaları kullanıcı verisi olduğu için
-kaldırma işlemi sırasında silinmez (`deleteAppDataOnUninstall: false`).
+Çıktı `release/` altına yazılır.
+
+| Platform | Çıktı |
+| --- | --- |
+| Windows | `Coderio-<sürüm>-x64-setup.exe` (NSIS kurulum sihirbazı) |
+| Linux | `Coderio-<sürüm>-x64.AppImage` ve `Coderio-<sürüm>-x64.deb` |
+| macOS | `.app` / `.dmg` — yalnızca macOS üzerinde üretilebilir |
+
+Windows kurulumu `PATH`'e `$INSTDIR` ekler ve `coderio.cmd` kısayolunu oluşturur.
+Model dosyaları kullanıcı verisi olduğu için kaldırma işlemi sırasında silinmez
+(`deleteAppDataOnUninstall: false`).
+
+> **Not:** Derleme sırasında `node_modules` içinde hedef platformun
+> `@node-llama-cpp` ikili dosyası bulunmalıdır (örn. Linux için `linux-x64`).
+> `npm install` yalnızca makinenizin platformuna uygun olanı indirir; başka
+> platforma derlemeden önce ilgili paketi elle eklemeniz gerekir.
+
+Sürümler doğrudan etiket (tag) ile yayınlanır:
+
+```bash
+git tag v0.6.0
+git push coderio v0.6.0
+```
+
+Ardından [Releases](https://github.com/TakimCizgisi/Coderio/releases/new)
+üzerinden sürüm notları girilir ve derleme çıktıları eklenir.
 
 ---
 
@@ -209,7 +238,7 @@ CLI yalnızca ayarlar menüsüdür; model motorunu indirmez ve başlatmaz.
 ## Proje Yapısı
 
 ```
-├── assets/            # README ve arayüz görselleri (logo)
+├── assets/            # README görselleri (logo)
 ├── build/             # uygulama ikonu, NSIS betiği
 ├── config/            # model kataloğu (models.json)
 ├── scripts/           # GPU kontrolü, duman testleri, yardımcılar
@@ -225,6 +254,7 @@ CLI yalnızca ayarlar menüsüdür; model motorunu indirmez ve başlatmaz.
 │   ├── renderer/      # arayüz (HTML/CSS/TS)
 │   ├── tools/         # ajan araçları
 │   └── utils/         # ortak yardımcılar
+├── UI/                # tek görsel kaynak (logo, font) → dist/renderer'a kopyalanır
 ├── esbuild.mjs        # 4 hedefli derleme betiği
 └── electron-builder.yml  # paketleme ayarları
 ```

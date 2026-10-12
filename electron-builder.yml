@@ -47,6 +47,25 @@ win:
   executableName: Coderio
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
 
+# Linux dağıtımı. `linux-x64-vulkan` ikili dosyası üretime girer; CUDA Linux'ta
+# masaüstü GPU sürücüsüne bağlı olduğu için varsayılan değildir.
+# Uygulama masaüstünde `Coderio.desktop` girdisi ve 256x256 PNG ile açılır.
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: build/icon.png
+  synopsis: Otonom yerel AI kodlama asistani
+  description: Coderio, tamamen yerel calisan otonom AI kodlama asistanidir. Model bilgisayarinizda kosar.
+  category: Development
+  maintainer: TakimCizgisi <takimcizgisi@users.noreply.github.com>
+  vendor: TakimCizgisi
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
 nsis:
   oneClick: false
   perMachine: false
