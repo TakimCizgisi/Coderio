@@ -145,8 +145,8 @@ npm run pack
 # Windows NSIS kurulum sihirbazı: Coderio-<sürüm>-x64-setup.exe
 npx electron-builder --win nsis --x64
 
-# Linux (AppImage + deb): Coderio-<sürüm>-x64.AppImage / .deb
-npx electron-builder --linux AppImage deb --x64
+# Linux (tar.gz): Coderio-<sürüm>-x64.tar.gz
+npx electron-builder --linux tar.gz --x64
 
 # ikisi birden
 npm run dist
@@ -157,7 +157,7 @@ npm run dist
 | Platform | Çıktı |
 | --- | --- |
 | Windows | `Coderio-<sürüm>-x64-setup.exe` (NSIS kurulum sihirbazı) |
-| Linux | `Coderio-<sürüm>-x64.AppImage` ve `Coderio-<sürüm>-x64.deb` |
+| Linux | `Coderio-<sürüm>-x64.tar.gz` (aç: `tar -xzf`) |
 | macOS | `.app` / `.dmg` — yalnızca macOS üzerinde üretilebilir |
 
 Windows kurulumu `PATH`'e `$INSTDIR` ekler ve `coderio.cmd` kısayolunu oluşturur.

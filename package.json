@@ -39,7 +39,7 @@
         "start": "npm run build && electron .",
         "dev": "node esbuild.mjs --watch",
         "pack": "npm run build && electron-builder --win --dir",
-        "dist": "npm run build && electron-builder --win nsis",
+        "dist": "npm run build && electron-builder --win nsis --x64 --linux tar.gz",
         "clean": "node scripts/clean.mjs",
         "icon": "electron scripts/make-icon.cjs",
         "test:tools": "tsx scripts/smoke-tools.ts",

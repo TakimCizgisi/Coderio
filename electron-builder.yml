@@ -47,15 +47,17 @@ win:
   executableName: Coderio
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
 
-# Linux dağıtımı. `linux-x64-vulkan` ikili dosyası üretime girer; CUDA Linux'ta
-# masaüstü GPU sürücüsüne bağlı olduğu için varsayılan değildir.
-# Uygulama masaüstünde `Coderio.desktop` girdisi ve 256x256 PNG ile açılır.
+# Linux dağıtımı.
+#
+# `tar.gz` seçiminin gerekçesi: `.deb` için `fpm`, `AppImage` için ise
+# dosya sistemi symlink'i gerekir (Windows'ta Geliştirici Modu/admin şartı).
+# `tar.gz` bunların hiçbirini gerektirmez ve `tar -xzf` ile her dağıtımda açılır.
+#
+# İkili dosya olarak `linux-x64` (CPU) ile `linux-x64-vulkan` paketlenir;
+# `linux-x64-cuda` masaüstü GPU sürücüsüne bağlı olduğu için varsayılan değildir.
 linux:
   target:
-    - target: AppImage
-      arch:
-        - x64
-    - target: deb
+    - target: tar.gz
       arch:
         - x64
   icon: build/icon.png
